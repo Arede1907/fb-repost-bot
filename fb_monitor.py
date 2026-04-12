@@ -26,7 +26,7 @@ _file_handler.setFormatter(logging.Formatter("%(asctime)s  %(message)s",
 logger.addHandler(_file_handler)
 logger.setLevel(logging.INFO)
 
-CHECK_INTERVAL = 30       # saniye — kaynak sayfa kontrol sıklığı
+CHECK_INTERVAL = 3 * 60   # saniye — kaynak sayfa kontrol sıklığı
 REPOST_SPACING = 3 * 60  # saniye — repostlar arası minimum bekleme
 
 
@@ -394,7 +394,7 @@ class FBRepostBot:
                 continue
 
             for page in self.target_pages:
-                slot_ts = max(int(datetime.now().timestamp()), self._next_slot_ts)
+                slot_ts = max(int(datetime.now().timestamp()) + self.repost_spacing, self._next_slot_ts)
                 self._next_slot_ts = slot_ts + self.repost_spacing
                 heapq.heappush(self._queue, _RepostTask(
                     run_at   = slot_ts,
