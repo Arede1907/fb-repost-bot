@@ -1,0 +1,15 @@
+[Unit]
+Description=fbbot — YouTube Shorts to Facebook
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/root/fbbot
+ExecStart=/root/fbbot/venv/bin/python /root/fbbot/onapp.py
+Restart=always
+RestartSec=5
+StandardOutput=append:/root/fbbot/fbbot.log
+StandardError=append:/root/fbbot/fbbot.log
+
+[Install]
+WantedBy=multi-user.target

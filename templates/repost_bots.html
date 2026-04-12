@@ -1,0 +1,322 @@
+{% extends "base.html" %}
+{% block content %}
+
+<div class="row g-4">
+
+  <!-- Yeni Bot Başlat -->
+  <div class="col-12">
+    <div class="card border-primary">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-plus-circle-fill text-primary"></i>
+        <strong>Yeni Repost Botu Başlat</strong>
+      </div>
+      <div class="card-body">
+        <form action="/repost-bots/start" method="post" id="repost-bot-form">
+
+          {% if not pages %}
+            <div class="alert alert-warning mb-0">
+              Önce <a href="/settings" class="alert-link">Ayarlar</a>'dan Facebook sayfası ekle.
+            </div>
+          {% else %}
+          <div class="row g-4">
+
+            <!-- Kaynak sayfa -->
+            <div class="col-md-4">
+              <label class="form-label">İzlenecek Kaynak Sayfa</label>
+              <select class="form-select" name="source_page_id" required id="source-select">
+                <option value="">— Seç —</option>
+                {% for p in pages %}
+                <option value="{{ p.get('page_id','') }}">{{ p.get('name', p.get('page_id','')) }}</option>
+                {% endfor %}
+              </select>
+              <div class="form-text">Yeni post geldiğinde bu sayfa izlenir.</div>
+            </div>
+
+            <!-- Hedef sayfalar -->
+            <div class="col-md-5">
+              <label class="form-label">Repost Yapılacak Sayfalar</label>
+              <div class="d-flex flex-wrap gap-3 mt-1">
+                {% for p in pages %}
+                <div class="form-check">
+                  <input class="form-check-input target-check" type="checkbox"
+                         name="target_page_ids" value="{{ p.get('page_id','') }}"
+                         id="tp_{{ loop.index }}">
+                  <label class="form-check-label" for="tp_{{ loop.index }}">
+                    {{ p.get('name', p.get('page_id','')) }}
+                  </label>
+                </div>
+                {% endfor %}
+              </div>
+              <div class="form-text">Kaynak sayfayla aynı sayfayı seçersen o sayfa otomatik atlanır.</div>
+            </div>
+
+          </div>
+          <div class="mt-3">
+            <button type="submit" class="btn btn-primary">
+              <i class="bi bi-play-fill me-1"></i>Botu Başlat
+            </button>
+          </div>
+          {% endif %}
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Aktif Botlar -->
+  <div class="col-12">
+    <div class="card">
+      <div class="card-header d-flex align-items-center gap-2">
+        <i class="bi bi-robot text-success"></i>
+        <strong>Aktif Botlar</strong>
+        <span class="badge bg-secondary ms-1">{{ bots | length }}</span>
+        <button class="btn btn-sm btn-outline-secondary ms-auto" onclick="refreshBots()">
+          <i class="bi bi-arrow-clockwise"></i>
+        </button>
+        <button class="btn btn-sm btn-outline-light" onclick="showActivityLog()" title="Tüm Aktivite Logları">
+          <i class="bi bi-file-earmark-text me-1"></i>Aktivite Log
+        </button>
+      </div>
+
+      {% if bots %}
+      <div class="table-responsive">
+        <table class="table table-hover align-middle mb-0">
+          <thead class="table-dark">
+            <tr>
+              <th>Kaynak Sayfa</th>
+              <th>Hedef Sayfalar</th>
+              <th style="width:90px">Durum</th>
+              <th style="width:70px" class="text-center">Repost</th>
+              <th style="width:70px" class="text-center">Bekleyen</th>
+              <th style="width:90px">Son Kontrol</th>
+              <th style="width:90px">Sonraki Kontrol</th>
+              <th style="width:110px"></th>
+            </tr>
+          </thead>
+          <tbody id="bots-tbody">
+            {% for bot in bots %}
+            <tr id="bot-row-{{ bot.bot_id }}">
+              <td>
+                <strong>{{ bot.source_name }}</strong>
+                <div class="text-muted small font-monospace">{{ bot.source_page_id }}</div>
+              </td>
+              <td>
+                {% for t in bot.to_dict().targets %}
+                  <span class="badge bg-primary me-1">{{ t }}</span>
+                {% endfor %}
+              </td>
+              <td>
+                {% if bot.running %}
+                  <span class="badge bg-success">
+                    <span class="spinner-grow spinner-grow-sm me-1" style="width:.5rem;height:.5rem"></span>Aktif
+                  </span>
+                {% elif bot.finished %}
+                  <span class="badge bg-dark border border-secondary">BİTTİ</span>
+                {% else %}
+                  <span class="badge bg-secondary">Durdu</span>
+                {% endif %}
+              </td>
+              <td class="text-center fw-bold" id="repost-count-{{ bot.bot_id }}">
+                {{ bot.posts_reposted }}
+              </td>
+              <td class="text-center" id="pending-count-{{ bot.bot_id }}">
+                {% if bot.pending_tasks > 0 %}
+                  <span class="badge bg-warning text-dark">{{ bot.pending_tasks }}</span>
+                {% else %}
+                  <span class="text-muted">–</span>
+                {% endif %}
+              </td>
+              <td class="text-muted small" id="last-check-{{ bot.bot_id }}">
+                {{ bot.last_check or '–' }}
+              </td>
+              <td class="text-muted small" id="next-check-{{ bot.bot_id }}">
+                {{ bot.next_check_str }}
+              </td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-info me-1"
+                        onclick="showLog('{{ bot.bot_id }}', '{{ bot.source_name }}')"
+                        title="Log">
+                  <i class="bi bi-terminal"></i>
+                </button>
+                {% if bot.running %}
+                <form action="/repost-bots/stop/{{ bot.bot_id }}" method="post" class="d-inline">
+                  <button type="submit" class="btn btn-sm btn-outline-warning" title="Durdur">
+                    <i class="bi bi-pause-fill"></i>
+                  </button>
+                </form>
+                {% endif %}
+                <form action="/repost-bots/delete/{{ bot.bot_id }}" method="post" class="d-inline"
+                      onsubmit="return confirm('Bot silinsin mi?')">
+                  <button type="submit" class="btn btn-sm btn-outline-danger" title="Sil">
+                    <i class="bi bi-trash"></i>
+                  </button>
+                </form>
+              </td>
+            </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+
+      {% else %}
+      <div class="p-5 text-center text-muted">
+        <i class="bi bi-robot fs-1 d-block mb-3 opacity-25"></i>
+        Henüz çalışan bot yok. Yukarıdan yeni bir bot başlat.
+      </div>
+      {% endif %}
+    </div>
+  </div>
+
+</div>
+
+<!-- Log Modal -->
+<div class="modal fade" id="logModal" tabindex="-1">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable">
+    <div class="modal-content" style="background:#0d1117">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title" id="logModalTitle">Bot Logu</h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-2" id="log-container"
+           style="font-family:monospace;font-size:.82rem;min-height:300px">
+        <div class="text-center text-muted p-4">Yükleniyor...</div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-sm btn-outline-secondary" onclick="refreshLog()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Yenile
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                data-bs-dismiss="modal">Kapat</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Activity Log Modal -->
+<div class="modal fade" id="activityLogModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable">
+    <div class="modal-content" style="background:#0d1117">
+      <div class="modal-header border-secondary">
+        <h5 class="modal-title">
+          <i class="bi bi-file-earmark-text me-2"></i>Repost Aktivite Logu
+          <small class="text-muted ms-2" id="activity-log-count"></small>
+        </h5>
+        <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body p-0" id="activity-log-container"
+           style="font-family:monospace;font-size:.8rem;max-height:70vh;overflow-y:auto">
+        <div class="text-center text-muted p-4">Yükleniyor...</div>
+      </div>
+      <div class="modal-footer border-secondary">
+        <button class="btn btn-sm btn-outline-secondary" onclick="loadActivityLog()">
+          <i class="bi bi-arrow-clockwise me-1"></i>Yenile
+        </button>
+        <button type="button" class="btn btn-sm btn-outline-secondary"
+                data-bs-dismiss="modal">Kapat</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Log ───────────────────────────────────────────────────────────────────
+let _logBotId = null;
+
+function showLog(botId, botName) {
+  _logBotId = botId;
+  document.getElementById('logModalTitle').textContent = botName + ' — Log';
+  refreshLog();
+  new bootstrap.Modal(document.getElementById('logModal')).show();
+}
+
+function refreshLog() {
+  if (!_logBotId) return;
+  fetch('/api/repost-bots/' + _logBotId + '/log')
+    .then(r => r.json())
+    .then(entries => {
+      const el = document.getElementById('log-container');
+      if (!entries.length) {
+        el.innerHTML = '<div class="text-muted text-center p-3">Henüz log yok.</div>';
+        return;
+      }
+      const cls = { success: 'text-success', error: 'text-danger',
+                    warn: 'text-warning', info: 'text-info' };
+      el.innerHTML = entries.map(e =>
+        `<div style="padding:2px 6px;border-bottom:1px solid #21262d">
+           <span class="text-muted me-2">${e.time}</span>
+           <span class="${cls[e.level] || 'text-info'}">${e.text}</span>
+         </div>`
+      ).join('');
+    });
+}
+
+function refreshBots() {
+  fetch('/api/repost-bots')
+    .then(r => r.json())
+    .then(bots => {
+      bots.forEach(bot => {
+        const rc = document.getElementById('repost-count-' + bot.bot_id);
+        const pc = document.getElementById('pending-count-' + bot.bot_id);
+        const lc = document.getElementById('last-check-' + bot.bot_id);
+        const nc = document.getElementById('next-check-' + bot.bot_id);
+        if (rc) rc.textContent = bot.posts_reposted;
+        if (pc) {
+          if (bot.pending_tasks > 0) {
+            pc.innerHTML = `<span class="badge bg-warning text-dark">${bot.pending_tasks}</span>`;
+          } else {
+            pc.innerHTML = '<span class="text-muted">–</span>';
+          }
+        }
+        if (lc) lc.textContent = bot.last_check || '–';
+        if (nc) nc.textContent = bot.next_check || '–';
+      });
+    });
+}
+
+// ── Activity Log ─────────────────────────────────────────────────────────
+function showActivityLog() {
+  loadActivityLog();
+  new bootstrap.Modal(document.getElementById('activityLogModal')).show();
+}
+
+function loadActivityLog() {
+  fetch('/api/repost-activity-log?n=500')
+    .then(r => r.json())
+    .then(data => {
+      const el = document.getElementById('activity-log-container');
+      const countEl = document.getElementById('activity-log-count');
+      countEl.textContent = `(toplam ${data.total} satır, son ${data.lines.length} gösteriliyor)`;
+
+      if (!data.lines.length) {
+        el.innerHTML = '<div class="text-muted text-center p-3">Henüz log yok.</div>';
+        return;
+      }
+
+      el.innerHTML = data.lines.map(line => {
+        let cls = 'text-info';
+        if (line.includes('✓') || line.includes('♥')) cls = 'text-success';
+        else if (line.includes('✗') || line.includes('ERROR')) cls = 'text-danger';
+        else if (line.includes('⚠')) cls = 'text-warning';
+
+        return `<div style="padding:2px 8px;border-bottom:1px solid #21262d" class="${cls}">${line}</div>`;
+      }).join('');
+
+      // Scroll en alta
+      el.scrollTop = el.scrollHeight;
+    })
+    .catch(() => {
+      document.getElementById('activity-log-container').innerHTML =
+        '<div class="text-danger text-center p-3">Log yüklenemedi.</div>';
+    });
+}
+
+// Her 15 saniyede sayaçları güncelle
+setInterval(refreshBots, 15000);
+// Log modalı açıksa her 10 sn logı yenile
+setInterval(() => {
+  if (document.getElementById('logModal').classList.contains('show')) refreshLog();
+}, 10000);
+</script>
+{% endblock %}

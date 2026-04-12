@@ -1,0 +1,27 @@
+# Hassas bilgiler
+.env
+
+# Runtime state
+state.json
+repost_bots_state.json
+
+# Loglar
+*.log
+
+# İndirilen videolar
+downloads/
+
+# SSL sertifikaları
+ssl/
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# IDE
+.vscode/
+.idea/
+
+# Claude
+.claude/
