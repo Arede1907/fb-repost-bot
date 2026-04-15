@@ -6,7 +6,8 @@ Monitors source Facebook pages and automatically reposts new content to target p
 
 - **Repost Bot** — Checks source FB page every 3 minutes, auto-reposts new posts to target pages
 - **YouTube → Facebook** — Downloads YouTube Shorts and uploads as Facebook Reels
-- **Web UI** — Flask-based management panel (login, bot management, settings)
+- **Twitter → Facebook** — Share public tweet photos to FB pages; for video tweets, extract N frames with ffmpeg and let the user pick which ones to post (X-embed-style preview card)
+- **Web UI** — Flask + Gunicorn/gevent management panel (login, bot management, settings, activity log download)
 - **Quiet Hours** — Automatically pauses all operations during specified hours
 - **Scheduled Sharing** — Schedule video posts for specific times
 - **Auto Like** — Likes source post as target page before reposting
@@ -52,9 +53,13 @@ Edit `.env` and fill in your credentials:
 
 5. **Run**
 ```bash
+# Production (recommended): Gunicorn + gevent worker
+gunicorn -c gunicorn_conf.py wsgi:app
+
+# Or, for quick local testing:
 python onapp.py
 ```
-Web UI: `http://localhost:5000`
+Web UI: `http://localhost:5000` (or `https://` if SSL certs are in `ssl/` — dev server only; production deployments should terminate TLS at a reverse proxy such as nginx).
 
 ### Server Setup (systemd)
 
@@ -81,6 +86,10 @@ All settings are configured via the `.env` file. See `.env.example` for details.
 | `QUIET_HOURS_START/END` | Quiet hours schedule (HH:MM) |
 | `UI_USERNAME/PASSWORD` | Web UI login credentials |
 | `PROXY_URL` | Residential proxy (optional) |
+
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for version history and release notes.
 
 ## License
 
