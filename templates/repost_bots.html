@@ -208,7 +208,13 @@
       </div>
       <div class="modal-footer border-secondary">
         <button class="btn btn-sm btn-outline-secondary" onclick="loadActivityLog()">
-          <i class="bi bi-arrow-clockwise me-1"></i>Yenile
+          <i class="bi bi-arrow-clockwise me-1"></i>Yenile (son 500)
+        </button>
+        <button class="btn btn-sm btn-outline-info" onclick="loadActivityLog(0)">
+          <i class="bi bi-list-ul me-1"></i>Tüm Logu Çek
+        </button>
+        <button class="btn btn-sm btn-outline-warning" onclick="downloadActivityLog()">
+          <i class="bi bi-download me-1"></i>İndir (.log)
         </button>
         <button type="button" class="btn btn-sm btn-outline-secondary"
                 data-bs-dismiss="modal">Kapat</button>
@@ -281,13 +287,20 @@ function showActivityLog() {
   new bootstrap.Modal(document.getElementById('activityLogModal')).show();
 }
 
-function loadActivityLog() {
-  fetch('/api/repost-activity-log?n=500')
+function loadActivityLog(n) {
+  // n verilmezse 500; 0 ise hepsini iste (büyük sayı)
+  const limit = (n === undefined) ? 500 : (n === 0 ? 9999999 : n);
+  const el = document.getElementById('activity-log-container');
+  el.innerHTML = '<div class="text-center text-muted p-4">Yükleniyor...</div>';
+  fetch('/api/repost-activity-log?n=' + limit)
     .then(r => r.json())
     .then(data => {
-      const el = document.getElementById('activity-log-container');
       const countEl = document.getElementById('activity-log-count');
-      countEl.textContent = `(toplam ${data.total} satır, son ${data.lines.length} gösteriliyor)`;
+      const showing = data.lines.length;
+      const isAll = showing >= data.total;
+      countEl.textContent = isAll
+        ? `(toplam ${data.total} satır — TÜMÜ gösteriliyor)`
+        : `(toplam ${data.total} satır, son ${showing} gösteriliyor)`;
 
       if (!data.lines.length) {
         el.innerHTML = '<div class="text-muted text-center p-3">Henüz log yok.</div>';
@@ -310,6 +323,21 @@ function loadActivityLog() {
       document.getElementById('activity-log-container').innerHTML =
         '<div class="text-danger text-center p-3">Log yüklenemedi.</div>';
     });
+}
+
+function downloadActivityLog() {
+  fetch('/api/repost-activity-log?n=9999999')
+    .then(r => r.json())
+    .then(data => {
+      const blob = new Blob([data.lines.join('\n')], {type: 'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `repost_activity_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.log`;
+      a.click();
+      URL.revokeObjectURL(url);
+    })
+    .catch(() => alert('Log indirme başarısız.'));
 }
 
 // Her 15 saniyede sayaçları güncelle

@@ -14,13 +14,15 @@ import webbrowser
 from datetime import datetime, timedelta
 
 from flask import (Flask, Response, flash, jsonify, redirect,
-                   render_template, request, session, url_for)
+                   render_template, request, send_file, session, url_for)
 from functools import wraps
 
 import config
 from config import is_quiet_hours
 import youtube_monitor as ym_module
-from facebook_poster import upload_video_instant, repost_to_page
+from facebook_poster import upload_video_instant, repost_to_page, upload_photo_to_page
+from twitter_fetcher import fetch_tweet
+import video_frames
 from startup import (get_last_channel, resolve_fb_page,
                      resolve_youtube_channel, save_last_channel, update_env)
 from state import get_shared_ids, mark_shared
@@ -491,6 +493,210 @@ def stream():
         mimetype="text/event-stream",
         headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
     )
+
+
+@app.route("/tw-to-fb", methods=["GET"])
+@login_required
+def tw_to_fb_page():
+    return render_template("tw_to_fb.html", pages=config.FB_PAGES)
+
+
+@app.route("/api/tw-preview", methods=["POST"])
+@login_required
+def api_tw_preview():
+    """Tweet'i önizler — text + foto URL'lerini döner."""
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+    if not url:
+        return jsonify({"ok": False, "error": "Link boş"}), 400
+    result = fetch_tweet(url)
+    return jsonify(result)
+
+
+@app.route("/api/tw-share", methods=["POST"])
+@login_required
+def api_tw_share():
+    """Tweet'i belirtilen FB sayfalarına foto post olarak yükler."""
+    if is_quiet_hours():
+        return jsonify({"status": "error",
+                        "msg": f"Gece modu aktif ({config.QUIET_HOURS_START}-{config.QUIET_HOURS_END}). "
+                               f"Bu saatler arasında paylaşım yapılamaz."}), 403
+
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+    page_ids = data.get("page_ids") or []
+    custom_caption = (data.get("caption") or "").strip()  # Opsiyonel; boşsa tweet text'i
+
+    if not url:
+        return jsonify({"status": "error", "msg": "Link boş"}), 400
+    if not page_ids:
+        return jsonify({"status": "error", "msg": "En az bir sayfa seç"}), 400
+
+    pages = [p for p in config.FB_PAGES if p["page_id"] in page_ids]
+    if not pages:
+        return jsonify({"status": "error", "msg": "Geçerli sayfa bulunamadı"}), 400
+
+    def _do():
+        push("info", f"⏳ Tweet alınıyor: {url}")
+        tweet = fetch_tweet(url)
+        if not tweet.get("ok"):
+            push("error", f"✗ Tweet alınamadı: {tweet.get('error')}")
+            return
+
+        if tweet.get("has_video"):
+            push("error", "✗ Bu tweet video içeriyor — şu an sadece fotolu tweet'ler destekleniyor.")
+            return
+        if not tweet.get("photos"):
+            push("error", "✗ Bu tweet'te foto bulunamadı.")
+            return
+
+        caption = custom_caption or tweet.get("text", "")
+        photos  = tweet["photos"]
+        push("info", f"📷 {len(photos)} foto bulundu, paylaşım başlıyor...")
+
+        for page in pages:
+            page_name = page.get("name", page["page_id"])
+            push("info", f"⬆ Yükleniyor → {page_name}")
+            result = upload_photo_to_page(page, photos, caption=caption)
+            if result is True:
+                push("success", f"✓ [{page_name}] Paylaşıldı")
+            else:
+                detail = f": {result}" if isinstance(result, str) else ""
+                push("error", f"✗ [{page_name}] hata{detail}")
+
+        push("done", "✅ TW → FB paylaşımı tamamlandı!")
+
+    threading.Thread(target=_do, daemon=True).start()
+    return jsonify({"status": "started"})
+
+
+@app.route("/api/tw-extract-frames", methods=["POST"])
+@login_required
+def api_tw_extract_frames():
+    """Video tweet'inden frame'leri çıkarır. body: {url, count}"""
+    data = request.get_json() or {}
+    url = (data.get("url") or "").strip()
+    try:
+        count = int(data.get("count") or 8)
+    except (TypeError, ValueError):
+        count = 8
+    count = max(1, min(count, 12))
+
+    if not url:
+        return jsonify({"ok": False, "error": "Link boş"}), 400
+
+    def _do_and_return():
+        push("info", f"⏳ Tweet alınıyor (frame için): {url}")
+        tweet = fetch_tweet(url)
+        if not tweet.get("ok"):
+            return {"ok": False, "error": tweet.get("error", "Tweet alınamadı")}
+        if not tweet.get("has_video") or not tweet.get("video_url"):
+            return {"ok": False, "error": "Bu tweet video içermiyor"}
+
+        push("info", f"🎞 Video indiriliyor & {count} frame çıkarılıyor...")
+        result = video_frames.extract_frames(tweet["video_url"], count=count)
+        if not result.get("ok"):
+            push("error", f"✗ Frame çıkarma hatası: {result.get('error')}")
+            return result
+
+        sid = result["session_id"]
+        urls = [f"/frames/{sid}/{name}" for name in result["frames"]]
+        push("success", f"✓ {len(urls)} frame hazır.")
+
+        # Background cleanup of old sessions
+        try:
+            video_frames.cleanup_old_sessions()
+        except Exception:
+            pass
+
+        return {
+            "ok": True,
+            "session_id": sid,
+            "frames": urls,
+            "duration": result.get("duration", 0),
+            "tweet_text": tweet.get("text", ""),
+            "author": tweet.get("author", ""),
+        }
+
+    out = _do_and_return()
+    return jsonify(out)
+
+
+@app.route("/frames/<session_id>/<filename>")
+@login_required
+def serve_frame(session_id, filename):
+    p = video_frames.get_frame_path(session_id, filename)
+    if p is None:
+        return "Not Found", 404
+    return send_file(str(p), mimetype="image/jpeg")
+
+
+@app.route("/api/tw-share-frames", methods=["POST"])
+@login_required
+def api_tw_share_frames():
+    """Seçili frame'leri FB sayfalarına foto post olarak yükler."""
+    if is_quiet_hours():
+        return jsonify({"status": "error",
+                        "msg": f"Gece modu aktif ({config.QUIET_HOURS_START}-{config.QUIET_HOURS_END}). "
+                               f"Bu saatler arasında paylaşım yapılamaz."}), 403
+
+    data = request.get_json() or {}
+    session_id = (data.get("session_id") or "").strip()
+    frame_indices = data.get("frame_indices") or []
+    page_ids = data.get("page_ids") or []
+    caption = (data.get("caption") or "").strip()
+
+    sess_dir = video_frames.get_session_dir(session_id)
+    if sess_dir is None:
+        return jsonify({"status": "error", "msg": "Geçersiz veya süresi dolmuş frame oturumu"}), 400
+    if not frame_indices:
+        return jsonify({"status": "error", "msg": "En az bir frame seç"}), 400
+    if len(frame_indices) > 10:
+        return jsonify({"status": "error", "msg": "FB tek post'ta en fazla 10 foto kabul ediyor"}), 400
+    if not page_ids:
+        return jsonify({"status": "error", "msg": "En az bir sayfa seç"}), 400
+
+    # Frame index'leri local path'lere çevir
+    frame_paths = []
+    for idx in frame_indices:
+        try:
+            i = int(idx)
+        except (TypeError, ValueError):
+            continue
+        p = sess_dir / f"frame_{i}.jpg"
+        if p.exists():
+            frame_paths.append(str(p))
+
+    if not frame_paths:
+        return jsonify({"status": "error", "msg": "Seçili frame'ler bulunamadı"}), 400
+
+    pages = [p for p in config.FB_PAGES if p["page_id"] in page_ids]
+    if not pages:
+        return jsonify({"status": "error", "msg": "Geçerli sayfa bulunamadı"}), 400
+
+    def _do():
+        push("info", f"📷 {len(frame_paths)} frame ile paylaşım başlıyor...")
+        for page in pages:
+            page_name = page.get("name", page["page_id"])
+            push("info", f"⬆ Yükleniyor → {page_name}")
+            result = upload_photo_to_page(page, frame_paths, caption=caption)
+            if result is True:
+                push("success", f"✓ [{page_name}] Paylaşıldı")
+            else:
+                detail = f": {result}" if isinstance(result, str) else ""
+                push("error", f"✗ [{page_name}] hata{detail}")
+
+        push("done", "✅ Frame paylaşımı tamamlandı!")
+
+        # Cleanup
+        try:
+            video_frames.cleanup_session(session_id)
+            push("info", "🧹 Geçici frame'ler silindi.")
+        except Exception as e:
+            push("warn", f"Cleanup hatası: {e}")
+
+    threading.Thread(target=_do, daemon=True).start()
+    return jsonify({"status": "started"})
 
 
 @app.route("/repost-bots")

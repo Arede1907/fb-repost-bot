@@ -156,6 +156,106 @@ def like_post_as_page(page: dict, post_id: str, user_token: str = "") -> bool | 
         return str(e)
 
 
+def _is_local_path(s: str) -> bool:
+    """URL değil, local dosya yolu mu?"""
+    return not (s.startswith("http://") or s.startswith("https://"))
+
+
+def _upload_single_photo(page_id: str, token: str, photo: str,
+                         caption: str = "", published: bool = True) -> tuple[bool, dict]:
+    """Tek foto yükler. URL veya local path kabul eder. (ok, data) döner."""
+    data = {"access_token": token, "published": "true" if published else "false"}
+    if caption:
+        data["caption"] = caption
+
+    try:
+        if _is_local_path(photo):
+            with open(photo, "rb") as f:
+                resp = requests.post(
+                    f"{GRAPH_URL}/{page_id}/photos",
+                    data=data,
+                    files={"source": f},
+                    timeout=120,
+                )
+        else:
+            data["url"] = photo
+            resp = requests.post(
+                f"{GRAPH_URL}/{page_id}/photos",
+                data=data,
+                timeout=60,
+            )
+        rj = resp.json()
+        if resp.status_code == 200 and ("id" in rj or "post_id" in rj):
+            return True, rj
+        return False, rj
+    except (requests.RequestException, OSError) as e:
+        return False, {"error": str(e)}
+
+
+def upload_photo_to_page(page: dict, photo_urls: list[str],
+                         caption: str = "", user_token: str = "") -> bool | str:
+    """
+    FB sayfasına foto post'u yükler.
+    photo_urls listesi URL veya local file path içerebilir (karışık olabilir).
+    - Tek foto: doğrudan /photos endpoint'i ile published=true
+    - Çoklu foto: önce her birini published=false yükle, sonra /feed'e attached_media ile post et
+    Başarılıysa True, hata varsa hata stringi döner.
+    """
+    import config as _cfg
+    page_id = page["page_id"]
+    token   = page.get("access_token", "") or user_token or _cfg.FB_USER_ACCESS_TOKEN
+
+    if not photo_urls:
+        return "Foto yok"
+
+    # Tek foto — doğrudan yayınla
+    if len(photo_urls) == 1:
+        ok, data = _upload_single_photo(page_id, token, photo_urls[0],
+                                        caption=caption, published=True)
+        if ok:
+            logger.info(f"[{page_id}] Foto yüklendi: {data.get('post_id') or data.get('id')}")
+            return True
+        err = data.get("error", data)
+        logger.error(f"[{page_id}] Foto yükleme hatası: {err}")
+        return str(err)
+
+    # Çoklu foto — önce unpublished yükle, sonra feed'e attach et
+    media_fbids = []
+    for purl in photo_urls:
+        ok, data = _upload_single_photo(page_id, token, purl, published=False)
+        if ok and "id" in data:
+            media_fbids.append(data["id"])
+        else:
+            err = data.get("error", data)
+            logger.error(f"[{page_id}] Çoklu foto upload hatası: {err}")
+            return f"Foto upload hatası: {err}"
+
+    # Tüm fotoları içeren post'u yayınla
+    try:
+        feed_data = {
+            "access_token": token,
+            "message":      caption,
+        }
+        # FB attached_media[N]={"media_fbid": X} formatında bekliyor
+        for i, fbid in enumerate(media_fbids):
+            feed_data[f"attached_media[{i}]"] = '{"media_fbid":"' + fbid + '"}'
+
+        resp = requests.post(
+            f"{GRAPH_URL}/{page_id}/feed",
+            data=feed_data,
+            timeout=60,
+        )
+        data = resp.json()
+        if resp.status_code == 200 and "id" in data:
+            logger.info(f"[{page_id}] Çoklu foto post'u yayınlandı: {data['id']}")
+            return True
+        err = data.get("error", data)
+        logger.error(f"[{page_id}] Feed post hatası: {err}")
+        return str(err)
+    except requests.RequestException as e:
+        return str(e)
+
+
 def repost_to_page(page: dict, post_url: str, description: str = "",
                    user_token: str = "") -> bool:
     """
