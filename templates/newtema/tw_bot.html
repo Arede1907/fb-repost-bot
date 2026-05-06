@@ -1,0 +1,360 @@
+{% extends "newtema/base.html" %}
+{% set active = 'twbot' %}
+{% block title %}TW API Bot — BahoAgent{% endblock %}
+
+{% block extra_head %}
+<style>
+  .stat-grid{
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0,1fr));
+    gap: 8px;
+  }
+  @media (max-width: 860px){
+    .stat-grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+  }
+  .stat-card{
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 12px; padding: 10px 8px; text-align: center;
+  }
+  .stat-val{ font-size: 20px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
+  .stat-label{ font-size: 10.5px; font-weight: 600; color: var(--ink-500);
+               text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
+  .info-row{
+    display:flex; justify-content: space-between; gap:10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
+  }
+  .info-row:last-child{ border: 0; }
+  .info-row .k{ color: var(--ink-500); font-weight: 500; }
+  .info-row .v{ color: var(--ink-900); font-weight: 600; text-align: right; }
+  .log-table{ width:100%; font-family:'SF Mono', monospace; font-size: 12.5px; }
+  .log-table td{ padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+  .log-table tr:nth-child(odd) td{ background: rgba(220,252,231,.18); }
+  html[data-theme="dark"] .log-table tr:nth-child(odd) td{ background: rgba(255,255,255,.025); }
+  .lvl-info{ color: #1d4ed8; }
+  .lvl-success{ color: #15803d; }
+  .lvl-warn{ color: #a16207; }
+  .lvl-error{ color: #b91c1c; }
+  .pulse-dot{
+    display:inline-block; width:8px; height:8px; border-radius:50%;
+    background:#22c55e; margin-right:6px;
+    animation: pulse 1.6s ease-in-out infinite;
+  }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  .log-wrap{ max-height: 560px; overflow-y: auto; border-top: 1px solid var(--line); }
+  @media (max-width: 860px){ .log-wrap{ max-height: 380px; } }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title"><i class="bi bi-heart-fill" style="color:#f43f5e"></i> TW API Bot</h1>
+    <div class="page-sub">Twitter API üzerinden videolu tweet'leri yakalar, Facebook sayfalarına aktarır.</div>
+  </div>
+  <div class="row-flex">
+    <span class="pill {% if bot and bot.running %}pill-success pill-dot{% elif bot %}pill-muted{% else %}pill-muted{% endif %}" id="status-pill">
+      {% if bot and bot.running %}Çalışıyor
+      {% elif bot %}Durdu
+      {% else %}Kurulmadı{% endif %}
+    </span>
+  </div>
+</div>
+
+<div class="grid" style="grid-template-columns: minmax(0,380px) 1fr; gap: 18px;">
+
+  <!-- Sol kolon: Durum + Kontrol -->
+  <div class="stack">
+
+    {% if bot %}
+    <div class="surface">
+      <div class="surface-head">
+        <i class="bi bi-graph-up-arrow" style="color:#22c55e"></i>
+        <span>Bot Durumu</span>
+      </div>
+      <div class="surface-body">
+        <div class="stat-grid" style="margin-bottom:14px">
+          <div class="stat-card">
+            <div class="stat-val" style="color:#15803d" id="stat-posted">{{ bot.tweets_posted }}</div>
+            <div class="stat-label">Paylaşılan</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" style="color:#a16207" id="stat-pending">{{ bot.pending_tasks }}</div>
+            <div class="stat-label">Bekleyen</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" style="color:#b91c1c" id="stat-errors">{{ bot.errors }}</div>
+            <div class="stat-label">Hata</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-val" style="color:#1d4ed8" id="stat-interval">{{ (bot.check_interval // 60) }}</div>
+            <div class="stat-label">Dk/Kontrol</div>
+          </div>
+        </div>
+
+        <div>
+          <div class="info-row">
+            <span class="k">Başladı</span>
+            <span class="v" id="info-started">{{ bot.started_at or "–" }}</span>
+          </div>
+          <div class="info-row">
+            <span class="k">Son Kontrol</span>
+            <span class="v" id="info-lastcheck">{{ bot.last_check or "–" }}</span>
+          </div>
+          <div class="info-row">
+            <span class="k">Sonraki</span>
+            <span class="v" id="info-nextcheck">{{ bot.next_check if bot.running else "–" }}</span>
+          </div>
+          <div class="info-row">
+            <span class="k">⚡ Anında</span>
+            <span class="v">{{ bot.instant_pages | map(attribute='name') | join(", ") or "–" }}</span>
+          </div>
+          <div class="info-row">
+            <span class="k">⏰ Kuyruk</span>
+            <span class="v">{{ bot.queued_pages | map(attribute='name') | join(", ") or "–" }}</span>
+          </div>
+        </div>
+
+        <div class="stack" style="gap:8px;margin-top:16px">
+          {% if bot.running %}
+            <button class="btn btn-soft btn-block" id="btn-check-now" onclick="checkNow()">
+              <i class="bi bi-arrow-clockwise"></i> Hemen Kontrol Et
+            </button>
+            <form method="post" action="/tw-bot/stop">
+              <button class="btn btn-warn btn-block"><i class="bi bi-stop-fill"></i> Durdur</button>
+            </form>
+          {% endif %}
+          <form method="post" action="/tw-bot/delete"
+                onsubmit="return confirm('Bot silinsin mi? Log geçmişi de temizlenir.')">
+            <button class="btn btn-ghost btn-block btn-sm"><i class="bi bi-trash"></i> Sil & Sıfırla</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if not bot or not bot.running %}
+    <div class="surface">
+      <div class="surface-head">
+        <i class="bi bi-play-fill" style="color:#22c55e"></i>
+        <span>Bot Başlat</span>
+      </div>
+      <div class="surface-body">
+        <form method="post" action="/tw-bot/start">
+          {% if not pages %}
+            <div class="alert alert-warning" style="margin:0 0 12px">
+              <i class="bi bi-exclamation-triangle"></i>
+              <div>Kayıtlı FB sayfası yok. Önce Ayarlar'dan ekle.</div>
+            </div>
+          {% else %}
+            <div class="field" style="margin-bottom:14px">
+              <label class="field-label"><i class="bi bi-lightning-fill" style="color:#a16207"></i> Anında Paylaş</label>
+              <div class="stack" style="gap:6px">
+                {% for page in pages %}
+                <label class="check">
+                  <input type="checkbox" name="instant_page_ids" value="{{ page.page_id }}">
+                  <span>{{ page.name or page.page_id }}</span>
+                </label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="field" style="margin-bottom:14px">
+              <label class="field-label"><i class="bi bi-clock"></i> Kuyruğa Al — 5dk aralıklı</label>
+              <div class="stack" style="gap:6px">
+                {% for page in pages %}
+                <label class="check">
+                  <input type="checkbox" name="queued_page_ids" value="{{ page.page_id }}">
+                  <span>{{ page.name or page.page_id }}</span>
+                </label>
+                {% endfor %}
+              </div>
+            </div>
+          {% endif %}
+
+          <div class="field" style="margin-bottom:14px">
+            <label class="field-label">Kontrol Sıklığı</label>
+            <select name="check_interval" class="select">
+              <option value="1">1 dakika</option>
+              <option value="3">3 dakika</option>
+              <option value="5">5 dakika</option>
+              <option value="10">10 dakika</option>
+              <option value="15" selected>15 dakika</option>
+              <option value="30">30 dakika</option>
+            </select>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block" {% if not pages %}disabled{% endif %}>
+            <i class="bi bi-play-fill"></i> Başlat
+          </button>
+        </form>
+
+        <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
+        <div class="text-muted small" style="margin-bottom:6px">Twitter API Durumu:</div>
+        <div id="api-status-check" class="text-muted small">Kontrol ediliyor...</div>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+
+  <!-- Sağ kolon: Log -->
+  <div class="surface">
+    <div class="surface-head">
+      <i class="bi bi-terminal"></i>
+      <span>Aktivite Logu</span>
+      {% if bot and bot.running %}
+        <span class="text-muted small" style="margin-left:6px"><span class="pulse-dot"></span>canlı</span>
+      {% endif %}
+      <div style="margin-left:auto" class="row-flex" style="gap:6px">
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="clearDisplay()" title="Temizle"><i class="bi bi-eraser"></i></button>
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="openFullLog()" title="Tam log"><i class="bi bi-arrows-fullscreen"></i></button>
+      </div>
+    </div>
+    <div class="log-wrap">
+      <table class="log-table">
+        <tbody id="log-body">
+          {% if bot %}
+            {% for entry in bot.get_log(100) %}
+            <tr>
+              <td class="text-muted" style="width:60px;white-space:nowrap">{{ entry.time }}</td>
+              <td class="lvl-{{ entry.level }}" style="width:24px">
+                {% if entry.level == 'success' %}✓
+                {% elif entry.level == 'error' %}✗
+                {% elif entry.level == 'warn' %}⚠
+                {% else %}·{% endif %}
+              </td>
+              <td>{{ entry.text }}</td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr><td colspan="3" class="text-muted" style="text-align:center;padding:30px">
+              Bot başlatıldıktan sonra loglar burada görünür.
+            </td></tr>
+          {% endif %}
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+</div>
+
+<!-- Tam log modal -->
+<div class="modal-mask" id="fullLogModal">
+  <div class="modal-card" style="max-width:1000px">
+    <div class="modal-head">
+      <i class="bi bi-file-text"></i><span>TW API Bot — Tam Log</span>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('fullLogModal')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" style="padding:0">
+      <pre id="full-log-content"
+           style="margin:0;padding:14px;font-family:'SF Mono',monospace;font-size:12.5px;
+                  white-space:pre-wrap;background:var(--surface-2);color:var(--ink-700);
+                  max-height:65vh;overflow-y:auto">Yükleniyor...</pre>
+    </div>
+    <div class="modal-foot">
+      <span class="text-muted small" id="full-log-info" style="margin-right:auto"></span>
+      <button class="btn btn-soft btn-sm" onclick="closeModal('fullLogModal')">Kapat</button>
+    </div>
+  </div>
+</div>
+
+<style>
+  @media (max-width: 860px){
+    .page .grid[style*="grid-template-columns"]{ grid-template-columns: 1fr !important; }
+  }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+(async function() {
+  const el = document.getElementById('api-status-check');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/tw-credentials-check');
+    const d = await r.json();
+    if (d.ok) el.innerHTML = '<span style="color:#15803d"><i class="bi bi-check-circle"></i> Credentials .env\'de mevcut</span>';
+    else el.innerHTML = `<span style="color:#a16207"><i class="bi bi-exclamation-triangle"></i> ${d.missing.join(", ")} eksik</span>`;
+  } catch { el.textContent = '–'; }
+})();
+
+let _lastLogCount = 0;
+
+async function pollLog() {
+  try {
+    const r = await fetch('/api/tw-bot/log?n=100');
+    const entries = await r.json();
+    if (!Array.isArray(entries) || entries.length === _lastLogCount) return;
+    _lastLogCount = entries.length;
+    const tbody = document.getElementById('log-body');
+    if (!tbody) return;
+    tbody.innerHTML = entries.map(e => {
+      const icon = e.level === 'success' ? '✓' : e.level === 'error' ? '✗' : e.level === 'warn' ? '⚠' : '·';
+      return `<tr>
+        <td class="text-muted" style="width:60px;white-space:nowrap">${e.time}</td>
+        <td class="lvl-${e.level}" style="width:24px">${icon}</td>
+        <td>${escHtml(e.text)}</td>
+      </tr>`;
+    }).join('');
+  } catch {}
+}
+
+async function pollStatus() {
+  try {
+    const r = await fetch('/api/tw-bot/status');
+    const d = await r.json();
+    if (!d.exists) return;
+    const pill = document.getElementById('status-pill');
+    if (pill) {
+      if (d.running) { pill.textContent = 'Çalışıyor'; pill.className = 'pill pill-success pill-dot'; }
+      else if (d.finished) { pill.textContent = 'Durdu'; pill.className = 'pill pill-muted'; }
+    }
+    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v == null || v === '') ? '–' : v; };
+    set('stat-posted', d.tweets_posted);
+    set('stat-pending', d.pending_tasks);
+    set('stat-errors', d.errors);
+    set('info-lastcheck', d.last_check);
+    set('info-nextcheck', d.running ? d.next_check : '–');
+  } catch {}
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+async function checkNow() {
+  const btn = document.getElementById('btn-check-now');
+  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Kontrol ediliyor...'; }
+  try { await fetch('/tw-bot/check-now', { method: 'POST' }); }
+  finally {
+    setTimeout(() => { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Hemen Kontrol Et'; } }, 3000);
+  }
+}
+
+function clearDisplay() {
+  const tbody = document.getElementById('log-body');
+  if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:20px">Görüntü temizlendi.</td></tr>';
+  _lastLogCount = 0;
+}
+
+async function openFullLog() {
+  openModal('fullLogModal');
+  const el = document.getElementById('full-log-content');
+  const info = document.getElementById('full-log-info');
+  el.textContent = 'Yükleniyor...';
+  try {
+    const r = await fetch('/api/tw-activity-log?n=1000');
+    const d = await r.json();
+    el.textContent = d.lines.join('\n') || '(log boş)';
+    if (info) info.textContent = `Toplam ${d.total} satır, son 1000 gösteriliyor`;
+    el.scrollTop = el.scrollHeight;
+  } catch { el.textContent = 'Log yüklenemedi.'; }
+}
+
+{% if bot and bot.running %}
+setInterval(pollLog, 5000);
+setInterval(pollStatus, 8000);
+pollLog();
+{% endif %}
+</script>
+{% endblock %}

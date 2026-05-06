@@ -18,6 +18,7 @@ from onapp import (
     refresh_all_page_tokens,
     update_env,
     _load_repost_bots_state,
+    _load_tw_bot_state,
     _periodic_save_loop,
 )
 
@@ -40,6 +41,7 @@ def _init_once():
                   f"{', '.join(p.get('name', p['page_id']) for p in bad)}", flush=True)
 
     _load_repost_bots_state()
+    _load_tw_bot_state()
     threading.Thread(target=_periodic_save_loop, daemon=True).start()
 
 

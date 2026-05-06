@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <defs>
+    <linearGradient id="bg" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%"   stop-color="#86efac"/>
+      <stop offset="50%"  stop-color="#34d399"/>
+      <stop offset="100%" stop-color="#22c55e"/>
+    </linearGradient>
+  </defs>
+  <!-- Full-bleed gradient background — iOS köşeleri kendi maskeler -->
+  <rect width="1024" height="1024" fill="url(#bg)"/>
+  <!-- Bootstrap "broadcast" ikonu, beyaz, ortalanmış, 1024 canvas'ın ~%55'i -->
+  <g transform="translate(228 228) scale(35.5)" fill="none" stroke="#ffffff" stroke-width="1" stroke-linecap="round">
+    <!-- Outer arcs (left & right) -->
+    <path d="M3.05 3.05a7 7 0 0 0 0 9.9" stroke-width="1"/>
+    <path d="M12.95 3.05a7 7 0 0 1 0 9.9" stroke-width="1"/>
+    <!-- Inner arcs -->
+    <path d="M5.172 5.172a4 4 0 0 0 0 5.656" stroke-width="1"/>
+    <path d="M10.828 5.172a4 4 0 0 1 0 5.656" stroke-width="1"/>
+    <!-- Center dot -->
+    <circle cx="8" cy="8" r="1.6" fill="#ffffff" stroke="none"/>
+  </g>
+</svg>

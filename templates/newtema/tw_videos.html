@@ -1,0 +1,203 @@
+{% extends "newtema/base.html" %}
+{% set active = 'twvideos' %}
+{% block title %}TW Video Listesi — BahoAgent{% endblock %}
+
+{% block extra_head %}
+<style>
+  .frame-grid{ display:grid; grid-template-columns: repeat(4, minmax(0,1fr)); gap: 8px; }
+  @media (max-width: 860px){ .frame-grid{ grid-template-columns: repeat(3, minmax(0,1fr)); } }
+  @media (max-width: 480px){ .frame-grid{ grid-template-columns: repeat(2, minmax(0,1fr)); } }
+
+  .frame-wrap{ position: relative; border-radius: 10px; overflow: hidden; }
+  .frame-img{
+    width:100%; aspect-ratio:16/9; object-fit:cover; display:block;
+    cursor:pointer; border:2px solid transparent;
+    transition: transform .15s ease, border-color .15s ease;
+  }
+  .frame-img:hover{ transform: scale(1.02); }
+  .frame-img.selected{ border-color: var(--mint-500); }
+  .frame-check{
+    position:absolute; top:6px; right:6px;
+    width:22px; height:22px; border-radius:50%;
+    background: var(--mint-500); color:#fff; font-weight:800;
+    display:none; align-items:center; justify-content:center;
+    box-shadow: 0 2px 6px rgba(0,0,0,.25);
+    font-size: 12px;
+  }
+  .frame-img.selected ~ .frame-check{ display:flex; }
+
+  .tweet-text{
+    background: var(--mint-50); border:1px solid var(--mint-200);
+    border-radius: 12px; padding: 10px 12px;
+    font-size: 13.5px; color: var(--ink-700); white-space: pre-wrap;
+    margin-bottom: 12px;
+  }
+  .video-card .surface-head{
+    background: var(--surface-2);
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title"><i class="bi bi-film" style="color:#6366f1"></i> TW Video Listesi</h1>
+    <div class="page-sub">Bot'un yakaladığı videolu tweet'ler — frame seçip Facebook sayfalarına paylaş.</div>
+  </div>
+  <span class="pill pill-info" id="pending-count">{{ pending|length }} gönderi</span>
+</div>
+
+<div id="empty-state" class="empty surface" style="{% if pending %}display:none{% endif %}">
+  <div class="empty-icon"><i class="bi bi-inbox"></i></div>
+  <div>Bekleyen video yok.</div>
+  <div class="text-muted small" style="margin-top:6px">Bot videolu tweet beğendiğinde burada görünür.</div>
+</div>
+
+<div id="video-list" class="stack" style="gap:18px">
+{% for item in pending %}
+<div class="surface video-card" id="vcard-{{ item.id }}">
+  <div class="surface-head">
+    <i class="bi bi-twitter-x"></i>
+    <span class="text-muted small">{{ item.detected_at }}</span>
+    <a href="{{ item.tweet_url }}" target="_blank" class="text-muted small" style="margin-left:8px;text-decoration:none;color:#1d4ed8;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px">
+      {{ item.tweet_url }}
+    </a>
+    <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" title="Kapat"
+            onclick="dismissVideo('{{ item.id }}')"><i class="bi bi-x-lg"></i></button>
+  </div>
+  <div class="surface-body">
+    <div class="grid" style="grid-template-columns: minmax(0,300px) 1fr; gap: 18px">
+
+      <!-- Sol: tweet metni + sayfa seçimi + gönder -->
+      <div>
+        {% if item.text %}
+          <div class="tweet-text">{{ item.text }}</div>
+        {% endif %}
+
+        <div class="field" style="margin-bottom:12px">
+          <label class="field-label">Caption (isteğe bağlı)</label>
+          <textarea class="textarea" rows="3" id="caption-{{ item.id }}">{{ item.text }}</textarea>
+        </div>
+
+        <div class="field" style="margin-bottom:14px">
+          <label class="field-label">Hedef Sayfalar</label>
+          <div class="stack" style="gap:6px">
+            {% for page in pages %}
+            <label class="check">
+              <input type="checkbox" class="page-check-{{ item.id }}" value="{{ page.page_id }}">
+              <span>{{ page.name or page.page_id }}</span>
+            </label>
+            {% endfor %}
+          </div>
+        </div>
+
+        <button class="btn btn-primary btn-block"
+                onclick="shareFrames('{{ item.id }}', '{{ item.session_id }}')">
+          <i class="bi bi-send"></i> Seçili Frame'leri Paylaş
+        </button>
+        <div id="result-{{ item.id }}" class="small" style="margin-top:8px"></div>
+      </div>
+
+      <!-- Sağ: frame grid -->
+      <div>
+        <div class="text-muted small" style="margin-bottom:8px">
+          Frame'lere tıklayarak seç (max 10):
+        </div>
+        <div class="frame-grid" id="frames-{{ item.id }}">
+          {% for frame_url in item.frames %}
+          {% set idx = loop.index0 %}
+          <div class="frame-wrap">
+            <img src="{{ frame_url }}" class="frame-img" loading="lazy"
+                 data-idx="{{ idx }}" data-vid="{{ item.id }}"
+                 onclick="toggleFrame(this)">
+            <div class="frame-check">✓</div>
+          </div>
+          {% endfor %}
+        </div>
+        {% if item.duration %}
+        <div class="text-muted small" style="margin-top:10px">
+          <i class="bi bi-clock"></i> Video süresi: {{ "%.0f"|format(item.duration) }}s
+        </div>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endfor %}
+</div>
+
+<style>
+  @media (max-width: 860px){
+    .video-card .grid[style*="grid-template-columns"]{ grid-template-columns: 1fr !important; }
+  }
+</style>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _selected = {};
+
+function toggleFrame(img) {
+  const vid = img.dataset.vid;
+  const idx = parseInt(img.dataset.idx);
+  if (!_selected[vid]) _selected[vid] = new Set();
+  const sel = _selected[vid];
+  if (sel.has(idx)) {
+    sel.delete(idx); img.classList.remove('selected');
+  } else {
+    if (sel.size >= 10) { alert("FB'de max 10 foto."); return; }
+    sel.add(idx); img.classList.add('selected');
+  }
+}
+
+async function shareFrames(videoId, sessionId) {
+  const indices = [...(_selected[videoId] || new Set())];
+  if (indices.length === 0) { alert('En az 1 frame seç.'); return; }
+
+  const pageIds = [...document.querySelectorAll(`.page-check-${videoId}:checked`)].map(el => el.value);
+  if (pageIds.length === 0) { alert('En az 1 sayfa seç.'); return; }
+
+  const caption = document.getElementById(`caption-${videoId}`)?.value || '';
+  const res = document.getElementById(`result-${videoId}`);
+  res.innerHTML = '<span class="text-muted">Paylaşılıyor...</span>';
+
+  try {
+    const r = await fetch('/api/tw-share-frames', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ session_id: sessionId, frame_indices: indices, page_ids: pageIds, caption }),
+    });
+    const d = await r.json();
+    if (d.status === 'started') {
+      res.innerHTML = '<span style="color:#15803d">✓ Paylaşım başlatıldı</span>';
+      setTimeout(() => dismissVideo(videoId), 1800);
+    } else {
+      res.innerHTML = `<span style="color:#b91c1c">✗ ${escHtml(d.msg || 'Hata')}</span>`;
+    }
+  } catch {
+    res.innerHTML = '<span style="color:#b91c1c">✗ Bağlantı hatası</span>';
+  }
+}
+
+async function dismissVideo(videoId) {
+  await fetch(`/api/tw-videos/${videoId}/dismiss`, { method: 'POST' });
+  document.getElementById(`vcard-${videoId}`)?.remove();
+  updateCount();
+}
+
+function updateCount() {
+  const cards = document.querySelectorAll("[id^='vcard-']").length;
+  const el = document.getElementById('pending-count');
+  if (el) el.textContent = `${cards} gönderi`;
+  const empty = document.getElementById('empty-state');
+  if (empty) empty.style.display = cards === 0 ? '' : 'none';
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+</script>
+{% endblock %}

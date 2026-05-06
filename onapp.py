@@ -30,9 +30,41 @@ from token_manager import get_page_token, refresh_all_page_tokens
 from video_downloader import delete_video, download_video
 from youtube_monitor import fetch_shorts, verify_and_get_turkish_title
 from fb_monitor import FBRepostBot
+from tw_monitor import TWLikeBot
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET", "fbbot-flask-secret-change-me")
+
+
+@app.after_request
+def _no_cache_html(response):
+    """HTML cevaplarda tarayıcı cache'ini kapat — yeni tema deploy'ları
+    hemen yansısın. JSON / static asset'ler etkilenmez."""
+    ct = response.headers.get("Content-Type", "")
+    if ct.startswith("text/html"):
+        response.headers["Cache-Control"] = "no-cache, no-store, must-revalidate"
+        response.headers["Pragma"]        = "no-cache"
+        response.headers["Expires"]       = "0"
+    return response
+
+
+# /newtema'dan gelen form POST'ları yine /newtema'da kalsın diye Referer'a göre
+# redirect hedefini değiştiren küçük yardımcı.
+_NEWTEMA_REDIRECT_MAP = {
+    "settings":         "newtema_settings",
+    "repost_bots_page": "newtema_repost_bots",
+    "tw_bot_page":      "newtema_tw_bot_page",
+    "tw_videos_page":   "newtema_tw_videos_page",
+    "index":            "newtema_index",
+}
+
+
+def _smart_redirect(endpoint, **kwargs):
+    """Eğer istek /newtema sayfalarından geldiyse, oraya geri yönlendir."""
+    ref = (request.referrer or "")
+    if "/newtema" in ref and endpoint in _NEWTEMA_REDIRECT_MAP:
+        endpoint = _NEWTEMA_REDIRECT_MAP[endpoint]
+    return redirect(url_for(endpoint, **kwargs))
 
 
 def login_required(f):
@@ -51,11 +83,11 @@ def login_page():
         password = request.form.get("password", "")
         if username == config.UI_USERNAME and password == config.UI_PASSWORD:
             session["logged_in"] = True
-            return redirect(request.args.get("next") or url_for("index"))
-        return render_template("login.html", error="Kullanıcı adı veya şifre hatalı.")
+            return redirect(request.args.get("next") or url_for("newtema_index"))
+        return render_template("newtema/login.html", error="Kullanıcı adı veya şifre hatalı.")
     if session.get("logged_in"):
-        return redirect(url_for("index"))
-    return render_template("login.html", error=None)
+        return redirect(url_for("newtema_index"))
+    return render_template("newtema/login.html", error=None)
 
 
 @app.route("/logout")
@@ -70,6 +102,51 @@ _progress: queue.Queue = queue.Queue()
 _active_page_ids: list[str] = []
 _operations: list[dict] = []          # Bu oturumdaki tüm işlemler
 _repost_bots: dict[str, FBRepostBot] = {}   # bot_id → bot
+_tw_bot: TWLikeBot | None = None            # Tek TW like bot instance'ı
+
+# ─── TW Like bot persistence ─────────────────────────────────────────────────
+TW_BOT_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                 "tw_bot_state.json")
+
+
+def _save_tw_bot_state() -> None:
+    global _tw_bot
+    if _tw_bot is None:
+        return
+    try:
+        data = {"version": 1, "saved_at": datetime.now().isoformat(),
+                "bot": _tw_bot.to_state_dict()}
+        tmp = TW_BOT_STATE_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+        os.replace(tmp, TW_BOT_STATE_FILE)
+    except Exception as e:
+        print(f"[tw-state] save failed: {e}")
+
+
+def _load_tw_bot_state() -> None:
+    global _tw_bot
+    if not os.path.exists(TW_BOT_STATE_FILE):
+        return
+    try:
+        with open(TW_BOT_STATE_FILE, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        bot_data = data.get("bot")
+        if not bot_data:
+            return
+        bot = TWLikeBot.from_state_dict(bot_data, config.FB_PAGES)
+        if bot is None:
+            print("[tw-state] bot restore edilemedi (hedef sayfalar bulunamadı)")
+            return
+        if bot_data.get("running"):
+            bot.start()
+            print("[tw-state] TW Like Bot yeniden başlatıldı")
+        else:
+            bot.finished = True
+        _tw_bot = bot
+    except Exception as e:
+        print(f"[tw-state] load failed: {e}")
+
 
 # ─── Repost bot persistence ───────────────────────────────────────────────────
 REPOST_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -143,8 +220,10 @@ def _periodic_save_loop():
             time.sleep(30)
             if _repost_bots:
                 _save_repost_bots_state()
+            if _tw_bot is not None:
+                _save_tw_bot_state()
         except Exception as e:
-            print(f"[repost-state] periodic save error: {e}")
+            print(f"[periodic-save] error: {e}")
 
 
 def push(msg_type: str, text: str = "", **extra):
@@ -196,6 +275,14 @@ def enrich_videos(video_list: list[dict], shared_ids: set) -> list[dict]:
 @app.route("/")
 @login_required
 def index():
+    # Yeni tema yayında — eski oturum sahipleri de /newtema'ya gitsin
+    return redirect(url_for("newtema_index"))
+
+
+@app.route("/legacy")
+@login_required
+def legacy_index():
+    """Eski tema, manuel acil durum erişimi için."""
     last = get_last_channel()
     return render_template(
         "index.html",
@@ -702,11 +789,7 @@ def api_tw_share_frames():
 @app.route("/repost-bots")
 @login_required
 def repost_bots_page():
-    return render_template(
-        "repost_bots.html",
-        pages=config.FB_PAGES,
-        bots=list(_repost_bots.values()),
-    )
+    return redirect(url_for("newtema_repost_bots"))
 
 
 @app.route("/repost-bots/start", methods=["POST"])
@@ -717,13 +800,13 @@ def start_repost_bot():
 
     if not source_page_id:
         flash("Kaynak sayfa seçmelisin.", "danger")
-        return redirect(url_for("repost_bots_page"))
+        return _smart_redirect("repost_bots_page")
 
     # Kaynak sayfayı config'den bul (token dahil)
     source_page = next((p for p in config.FB_PAGES if p["page_id"] == source_page_id), None)
     if not source_page:
         flash("Kaynak sayfa bulunamadı.", "danger")
-        return redirect(url_for("repost_bots_page"))
+        return _smart_redirect("repost_bots_page")
 
     # Hedef sayfalar — kaynakla aynı olanı otomatik çıkar
     target_pages = [p for p in config.FB_PAGES
@@ -731,7 +814,7 @@ def start_repost_bot():
 
     if not target_pages:
         flash("En az bir hedef sayfa seçmelisin (kaynak sayfadan farklı).", "danger")
-        return redirect(url_for("repost_bots_page"))
+        return _smart_redirect("repost_bots_page")
 
     bot = FBRepostBot(source_page, target_pages)
     bot.start()
@@ -739,7 +822,7 @@ def start_repost_bot():
     _save_repost_bots_state()
 
     flash(f"✓ Bot başlatıldı: {source_page.get('name', source_page_id)}", "success")
-    return redirect(url_for("repost_bots_page"))
+    return _smart_redirect("repost_bots_page")
 
 
 @app.route("/repost-bots/stop/<bot_id>", methods=["POST"])
@@ -749,7 +832,7 @@ def stop_repost_bot(bot_id):
         _repost_bots[bot_id].stop()
         _save_repost_bots_state()
         flash("Bot durduruldu.", "warning")
-    return redirect(url_for("repost_bots_page"))
+    return _smart_redirect("repost_bots_page")
 
 
 @app.route("/repost-bots/delete/<bot_id>", methods=["POST"])
@@ -760,7 +843,7 @@ def delete_repost_bot(bot_id):
         del _repost_bots[bot_id]
         _save_repost_bots_state()
         flash("Bot silindi.", "success")
-    return redirect(url_for("repost_bots_page"))
+    return _smart_redirect("repost_bots_page")
 
 
 @app.route("/api/debug-scrape/<page_id>")
@@ -832,13 +915,150 @@ def api_repost_activity_log():
         return jsonify({"lines": [f"Hata: {e}"], "total": 0})
 
 
+# ─── TW Like Bot routes ───────────────────────────────────────────────────────
+
+@app.route("/tw-bot")
+@login_required
+def tw_bot_page():
+    return redirect(url_for("newtema_tw_bot_page"))
+
+
+@app.route("/tw-bot/start", methods=["POST"])
+@login_required
+def start_tw_bot():
+    global _tw_bot
+    instant_ids = request.form.getlist("instant_page_ids")
+    queued_ids  = request.form.getlist("queued_page_ids")
+
+    if not instant_ids and not queued_ids:
+        flash("En az bir sayfa seçmelisin.", "danger")
+        return _smart_redirect("tw_bot_page")
+
+    instant_pages = [p for p in config.FB_PAGES if p["page_id"] in instant_ids]
+    queued_pages  = [p for p in config.FB_PAGES if p["page_id"] in queued_ids]
+
+    try:
+        interval_min = int(request.form.get("check_interval", 15))
+        interval_min = interval_min if interval_min in (1, 3, 5, 10, 15, 30) else 15
+    except (TypeError, ValueError):
+        interval_min = 15
+
+    if _tw_bot and _tw_bot.running:
+        _tw_bot.stop()
+
+    _tw_bot = TWLikeBot(instant_pages, queued_pages, check_interval=interval_min * 60)
+    _tw_bot.start()
+    _save_tw_bot_state()
+    flash("✓ TW Like Bot başlatıldı.", "success")
+    return _smart_redirect("tw_bot_page")
+
+
+@app.route("/tw-bot/stop", methods=["POST"])
+@login_required
+def stop_tw_bot():
+    global _tw_bot
+    if _tw_bot and _tw_bot.running:
+        _tw_bot.stop()
+        _save_tw_bot_state()
+        flash("Bot durduruldu.", "warning")
+    return _smart_redirect("tw_bot_page")
+
+
+@app.route("/tw-bot/check-now", methods=["POST"])
+@login_required
+def tw_bot_check_now():
+    if _tw_bot and _tw_bot.running:
+        _tw_bot.check_now()
+        return jsonify({"ok": True})
+    return jsonify({"ok": False, "msg": "Bot çalışmıyor"}), 400
+
+
+@app.route("/tw-bot/delete", methods=["POST"])
+@login_required
+def delete_tw_bot():
+    global _tw_bot
+    if _tw_bot:
+        _tw_bot.stop()
+        _tw_bot = None
+        if os.path.exists(TW_BOT_STATE_FILE):
+            os.remove(TW_BOT_STATE_FILE)
+        flash("Bot silindi.", "success")
+    return _smart_redirect("tw_bot_page")
+
+
+@app.route("/api/tw-bot/status")
+@login_required
+def api_tw_bot_status():
+    if _tw_bot is None:
+        return jsonify({"exists": False})
+    return jsonify({"exists": True, **_tw_bot.to_dict()})
+
+
+@app.route("/api/tw-bot/log")
+@login_required
+def api_tw_bot_log():
+    if _tw_bot is None:
+        return jsonify([])
+    n = request.args.get("n", 100, type=int)
+    return jsonify(_tw_bot.get_log(n))
+
+
+@app.route("/tw-videos")
+@login_required
+def tw_videos_page():
+    return redirect(url_for("newtema_tw_videos_page"))
+
+
+@app.route("/api/tw-videos")
+@login_required
+def api_tw_videos():
+    if not _tw_bot:
+        return jsonify([])
+    return jsonify(_tw_bot._pending_videos)
+
+
+@app.route("/api/tw-videos/<video_id>/dismiss", methods=["POST"])
+@login_required
+def api_tw_video_dismiss(video_id):
+    if _tw_bot:
+        _tw_bot.dismiss_video(video_id)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tw-credentials-check")
+@login_required
+def api_tw_credentials_check():
+    missing = [k for k, v in {
+        "TW_API_KEY":             config.TW_API_KEY,
+        "TW_API_SECRET":          config.TW_API_SECRET,
+        "TW_ACCESS_TOKEN":        config.TW_ACCESS_TOKEN,
+        "TW_ACCESS_TOKEN_SECRET": config.TW_ACCESS_TOKEN_SECRET,
+    }.items() if not v]
+    return jsonify({"ok": len(missing) == 0, "missing": missing})
+
+
+@app.route("/api/tw-activity-log")
+@login_required
+def api_tw_activity_log():
+    """tw_activity.log dosyasını döndür (son N satır)."""
+    n = request.args.get("n", 500, type=int)
+    log_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tw_activity.log")
+    if not os.path.exists(log_path):
+        return jsonify({"lines": [], "total": 0})
+    try:
+        with open(log_path, "r", encoding="utf-8") as f:
+            all_lines = f.readlines()
+        total = len(all_lines)
+        lines = [l.rstrip() for l in all_lines[-n:]]
+        return jsonify({"lines": lines, "total": total})
+    except Exception as e:
+        return jsonify({"lines": [f"Hata: {e}"], "total": 0})
+
+
 @app.route("/settings")
 @login_required
 def settings():
-    return render_template("settings.html", pages=config.FB_PAGES,
-                           channel_id=config.YOUTUBE_CHANNEL_ID,
-                           fb_c_user=config.FB_COOKIE_C_USER,
-                           fb_xs=config.FB_COOKIE_XS)
+    return redirect(url_for("newtema_settings"))
 
 
 @app.route("/settings/fb-cookies", methods=["POST"])
@@ -848,13 +1068,13 @@ def save_fb_cookies():
     xs     = request.form.get("xs", "").strip()
     if not c_user or not xs:
         flash("c_user ve xs alanları boş olamaz.", "danger")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
     config.FB_COOKIE_C_USER = c_user
     config.FB_COOKIE_XS     = xs
     update_env("FB_COOKIE_C_USER", c_user)
     update_env("FB_COOKIE_XS", xs)
     flash("✓ Cookie'ler kaydedildi.", "success")
-    return redirect(url_for("settings"))
+    return _smart_redirect("settings")
 
 
 @app.route("/settings/channel", methods=["POST"])
@@ -864,12 +1084,12 @@ def change_channel():
     query = request.form.get("channel_query", "").strip()
     if not query:
         flash("Kanal adı boş olamaz.", "danger")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
 
     channel = resolve_youtube_channel(query)
     if not channel:
         flash("Kanal bulunamadı. URL veya @kullanıcıadını kontrol et.", "danger")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
 
     config.YOUTUBE_CHANNEL_ID = channel["id"]
     ym_module.SHORTS_URL = f"https://www.youtube.com/channel/{channel['id']}/shorts"
@@ -879,7 +1099,7 @@ def change_channel():
     _channel_info = {}
 
     flash(f"✓ Kanal değiştirildi: {channel['name']}", "success")
-    return redirect(url_for("settings"))
+    return _smart_redirect("settings")
 
 
 @app.route("/settings/page/add", methods=["POST"])
@@ -888,21 +1108,21 @@ def add_page():
     query = request.form.get("page_query", "").strip()
     if not query:
         flash("Sayfa adı boş olamaz.", "danger")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
 
     if not config.FB_USER_ACCESS_TOKEN:
         flash("FB_USER_ACCESS_TOKEN .env dosyasında tanımlı değil.", "danger")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
 
     page_info, resolve_err = resolve_fb_page(query, config.FB_USER_ACCESS_TOKEN)
     if not page_info:
         flash(f"Sayfa bulunamadı: {resolve_err}", "danger")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
 
     page_id = page_info["page_id"]
     if any(p["page_id"] == page_id for p in config.FB_PAGES):
         flash("Bu sayfa zaten kayıtlı.", "warning")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
 
     token, _ = get_page_token(page_id, config.FB_USER_ACCESS_TOKEN)
     if not token:
@@ -917,7 +1137,7 @@ def add_page():
     update_env("FB_PAGES", pages_str)
 
     flash(f"✓ {page_info['name']} eklendi.", "success")
-    return redirect(url_for("settings"))
+    return _smart_redirect("settings")
 
 
 @app.route("/settings/page/remove", methods=["POST"])
@@ -928,7 +1148,7 @@ def remove_page():
     pages_str = ",".join(f"{p['page_id']}:{p['access_token']}" for p in config.FB_PAGES)
     update_env("FB_PAGES", pages_str)
     flash("Sayfa silindi.", "success")
-    return redirect(url_for("settings"))
+    return _smart_redirect("settings")
 
 
 @app.route("/settings/user-token", methods=["POST"])
@@ -937,7 +1157,7 @@ def update_user_token():
     new_token = request.form.get("user_token", "").strip()
     if not new_token:
         flash("Yeni token boş olamaz. Sadece sayfa tokenlarını yenilemek için 'Sayfa Tokenlarını Yenile' butonunu kullan.", "warning")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
 
     config.FB_USER_ACCESS_TOKEN = new_token
     update_env("FB_USER_ACCESS_TOKEN", new_token)
@@ -954,7 +1174,7 @@ def update_user_token():
     else:
         flash("✓ Token güncellendi.", "success")
 
-    return redirect(url_for("settings"))
+    return _smart_redirect("settings")
 
 
 @app.route("/settings/tokens/refresh", methods=["POST"])
@@ -962,10 +1182,107 @@ def update_user_token():
 def refresh_tokens():
     if not config.FB_USER_ACCESS_TOKEN:
         flash("FB_USER_ACCESS_TOKEN tanımlı değil.", "danger")
-        return redirect(url_for("settings"))
+        return _smart_redirect("settings")
     config.FB_PAGES = refresh_all_page_tokens(config.FB_PAGES, config.FB_USER_ACCESS_TOKEN)
     flash("✓ Token'lar yenilendi.", "success")
-    return redirect(url_for("settings"))
+    return _smart_redirect("settings")
+
+
+# ─── /newtema — Yeni tema önizleme (BahoAgent) ───────────────────────────────
+# Eski /, /videos, /repost-bots, /settings vb. route'lar olduğu gibi çalışmaya
+# devam eder. Yeni tema yayına alınınca template'leri ana yola taşıyacağız.
+
+def _newtema_dashboard_stats() -> dict:
+    repost_running = sum(1 for b in _repost_bots.values() if b.running)
+    repost_total   = sum(int(getattr(b, "posts_reposted", 0)) for b in _repost_bots.values())
+
+    tw_running        = bool(_tw_bot and _tw_bot.running)
+    tw_target_pages   = 0
+    tw_likes          = 0
+    tw_videos_total   = 0
+    tw_videos_pending = 0
+    if _tw_bot is not None:
+        instant         = getattr(_tw_bot, "instant_pages", []) or []
+        queued          = getattr(_tw_bot, "queued_pages", []) or []
+        tw_target_pages = len(instant) + len(queued)
+        tw_likes        = int(getattr(_tw_bot, "tweets_posted", 0))
+        pending         = getattr(_tw_bot, "_pending_videos", []) or []
+        tw_videos_total = len(pending)
+        tw_videos_pending = tw_videos_total
+
+    return {
+        "repost_running":    repost_running,
+        "repost_total":      repost_total,
+        "tw_running":        tw_running,
+        "tw_handles":        tw_target_pages,
+        "tw_likes":          tw_likes,
+        "tw_videos_total":   tw_videos_total,
+        "tw_videos_pending": tw_videos_pending,
+    }
+
+
+@app.route("/newtema")
+@login_required
+def newtema_index():
+    return render_template(
+        "newtema/index.html",
+        channel=get_last_channel(),
+        pages=config.FB_PAGES,
+        active_page_ids=_active_page_ids,
+        stats=_newtema_dashboard_stats(),
+    )
+
+
+@app.route("/api/newtema/dashboard")
+@login_required
+def api_newtema_dashboard():
+    return jsonify(_newtema_dashboard_stats())
+
+
+@app.route("/newtema/settings")
+@login_required
+def newtema_settings():
+    return render_template(
+        "newtema/settings.html",
+        pages=config.FB_PAGES,
+        channel_id=config.YOUTUBE_CHANNEL_ID,
+        fb_c_user=config.FB_COOKIE_C_USER,
+        fb_xs=config.FB_COOKIE_XS,
+    )
+
+
+@app.route("/newtema/repost-bots")
+@login_required
+def newtema_repost_bots():
+    bots = list(_repost_bots.values())
+    bots_json = {b.bot_id: b.to_dict() for b in bots}
+    return render_template(
+        "newtema/repost_bots.html",
+        bots=bots,
+        pages=config.FB_PAGES,
+        bots_json=json.dumps(bots_json, ensure_ascii=False),
+    )
+
+
+@app.route("/newtema/tw-bot")
+@login_required
+def newtema_tw_bot_page():
+    return render_template(
+        "newtema/tw_bot.html",
+        pages=config.FB_PAGES,
+        bot=_tw_bot,
+    )
+
+
+@app.route("/newtema/tw-videos")
+@login_required
+def newtema_tw_videos_page():
+    pending = _tw_bot._pending_videos if _tw_bot else []
+    return render_template(
+        "newtema/tw_videos.html",
+        pages=config.FB_PAGES,
+        pending=pending,
+    )
 
 
 if __name__ == "__main__":
@@ -986,6 +1303,8 @@ if __name__ == "__main__":
                   f"{', '.join(p.get('name', p['page_id']) for p in bad)}")
     # Repost botlarını disk'ten restore et
     _load_repost_bots_state()
+    # TW Like Bot'u disk'ten restore et
+    _load_tw_bot_state()
     threading.Thread(target=_periodic_save_loop, daemon=True).start()
 
     port = int(os.getenv("PORT", 5000))

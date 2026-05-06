@@ -1,0 +1,16 @@
+{
+  "name": "BahoAgent",
+  "short_name": "BahoAgent",
+  "description": "Facebook & Twitter otomasyon paneli",
+  "start_url": "/newtema",
+  "scope": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f7fbf8",
+  "theme_color": "#22c55e",
+  "icons": [
+    { "src": "/static/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png" },
+    { "src": "/static/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

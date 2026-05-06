@@ -1,0 +1,211 @@
+{% extends "newtema/base.html" %}
+{% set active = 'settings' %}
+{% block title %}Ayarlar — BahoAgent{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title"><i class="bi bi-gear-fill" style="color:#22c55e"></i> Ayarlar</h1>
+    <div class="page-sub">Token'lar, sayfalar ve oturum bilgileri.</div>
+  </div>
+</div>
+
+<div class="grid grid-cols-2" style="margin-bottom:18px">
+
+  <!-- Sayfa Ekle (artık önce) -->
+  <div class="surface">
+    <div class="surface-head">
+      <i class="bi bi-plus-circle-fill" style="color:#22c55e"></i>
+      <span>Facebook Sayfası Ekle</span>
+    </div>
+    <div class="surface-body">
+      <form action="/settings/page/add" method="post">
+        <label class="field-label" style="display:block;margin-bottom:6px">Sayfa URL'si veya adı</label>
+        <div class="row-flex" style="gap:8px;align-items:stretch;flex-wrap:nowrap">
+          <input type="text" class="input" name="page_query"
+                 placeholder="https://facebook.com/sayfaadi" required style="flex:1;min-width:0">
+          <button type="submit" class="btn btn-primary" style="flex-shrink:0"><i class="bi bi-plus-lg"></i> Ekle</button>
+        </div>
+        <div class="field-help" style="margin-top:6px">Business Manager'da sayfayı portföye eklemeyi unutma.</div>
+      </form>
+    </div>
+  </div>
+
+  <!-- YouTube Kanalı -->
+  <div class="surface">
+    <div class="surface-head">
+      <i class="bi bi-youtube" style="color:#ff0000"></i>
+      <span>YouTube Kanalı</span>
+      <span class="pill pill-muted" style="margin-left:auto;font-size:11px">pasif modül</span>
+    </div>
+    <div class="surface-body">
+      {% if channel_id %}
+        <div class="text-muted small" style="margin-bottom:10px">
+          Mevcut ID: <code class="text-mono" style="background:var(--mint-50);padding:2px 6px;border-radius:6px">{{ channel_id }}</code>
+        </div>
+      {% endif %}
+      <form action="/settings/channel" method="post">
+        <label class="field-label" style="display:block;margin-bottom:6px">Kanal URL'si veya @kullanıcıadı</label>
+        <div class="row-flex" style="gap:8px;align-items:stretch;flex-wrap:nowrap">
+          <input type="text" class="input" name="channel_query" placeholder="@ekinkollama" required style="flex:1;min-width:0">
+          <button type="submit" class="btn btn-primary" style="flex-shrink:0"><i class="bi bi-search"></i> Değiştir</button>
+        </div>
+        <div class="field-help" style="margin-top:6px">Örn: @ekinkollama, https://youtube.com/@ekinkollama</div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<!-- User Access Token + FB Session Cookies — yan yana -->
+<div class="grid grid-cols-2" style="margin-bottom:18px">
+
+  <!-- User Access Token -->
+  <div class="surface">
+    <div class="surface-head">
+      <i class="bi bi-key-fill" style="color:#dc2626"></i>
+      <span>Facebook User Access Token</span>
+      <span class="pill pill-danger" style="margin-left:auto">kritik</span>
+    </div>
+    <div class="surface-body">
+
+      <div style="margin-bottom:14px">
+        <div class="text-muted small" style="margin-bottom:8px">
+          Token'ların süresi dolduğunda paylaşımlar başarısız olur. User Token geçerliyse butonla sayfa token'larını yenileyebilirsin.
+        </div>
+        <form action="/settings/tokens/refresh" method="post">
+          <button type="submit" class="btn btn-soft btn-sm"><i class="bi bi-arrow-repeat"></i> Sayfa Token'larını Yenile</button>
+        </form>
+      </div>
+
+      <hr style="border:0;border-top:1px solid var(--line);margin:0 0 14px">
+
+      <div class="text-muted small" style="margin-bottom:8px">
+        User Token süresi dolduysa yeni al:
+        <a href="https://developers.facebook.com/tools/accesstoken/" target="_blank"
+           style="color:#60a5fa;font-weight:600">developers.facebook.com/tools/accesstoken</a>
+      </div>
+
+      <form action="/settings/user-token" method="post">
+        <label class="field-label" style="display:block;margin-bottom:6px">Yeni User Access Token</label>
+        <div class="input-group" style="margin-bottom:10px">
+          <input type="password" class="input font-mono" name="user_token"
+                 id="user-token-input" placeholder="EAAf...">
+          <button type="button" class="btn btn-ghost btn-icon" onclick="toggleToken()">
+            <i class="bi bi-eye" id="token-eye"></i>
+          </button>
+        </div>
+        <button type="submit" class="btn btn-danger btn-sm">
+          <i class="bi bi-arrow-repeat"></i> Token'ı Değiştir ve Yenile
+        </button>
+      </form>
+    </div>
+  </div>
+
+  <!-- FB Session Cookies -->
+  <div class="surface">
+    <div class="surface-head">
+      <i class="bi bi-cookie" style="color:#d97706"></i>
+      <span>Facebook Oturum Cookie'leri</span>
+      <span class="pill pill-warn" style="margin-left:auto">Repost Bot</span>
+    </div>
+    <div class="surface-body">
+      <div class="text-muted small" style="margin-bottom:12px;line-height:1.55">
+        Repost Bot, yönetmediğin sayfaları tarayabilmek için bu cookie'lere ihtiyaç duyar.<br>
+        <strong>Nasıl alınır:</strong> facebook.com'a giriş yap →
+        <kbd style="background:var(--mint-100);padding:1px 5px;border-radius:5px;border:1px solid var(--mint-200);font-size:11px">F12</kbd>
+        → Application → Cookies →
+        <code style="background:var(--mint-50);padding:1px 5px;border-radius:5px">c_user</code> ve
+        <code style="background:var(--mint-50);padding:1px 5px;border-radius:5px">xs</code>'i kopyala.
+      </div>
+      <form action="/settings/fb-cookies" method="post">
+        <div class="field" style="margin-bottom:10px">
+          <label class="field-label">c_user <span class="text-muted" style="font-weight:400">(sayısal ID)</span></label>
+          <input type="text" class="input font-mono" name="c_user" placeholder="100009..." value="{{ fb_c_user or '' }}">
+        </div>
+        <div class="field" style="margin-bottom:12px">
+          <label class="field-label">xs <span class="text-muted" style="font-weight:400">(oturum token)</span></label>
+          <input type="text" class="input font-mono" name="xs" placeholder="24%3A..." value="{{ fb_xs or '' }}">
+        </div>
+      </div>
+      <div class="row-flex">
+        <button type="submit" class="btn btn-warn"><i class="bi bi-floppy"></i> Cookie'leri Kaydet</button>
+        {% if fb_c_user %}
+          <span class="pill pill-success pill-dot">Cookie kayıtlı (c_user: {{ fb_c_user }})</span>
+        {% endif %}
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Kayıtlı Sayfalar -->
+<div class="surface">
+  <div class="surface-head">
+    <i class="bi bi-facebook" style="color:#1877f2"></i>
+    <span>Kayıtlı Facebook Sayfaları</span>
+    <span class="pill pill-muted" style="margin-left:8px">{{ pages|length }}</span>
+    <form action="/settings/tokens/refresh" method="post" style="margin-left:auto">
+      <button type="submit" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-repeat"></i> Token'ları Yenile</button>
+    </form>
+  </div>
+  {% if pages %}
+  <div style="overflow-x:auto">
+    <table class="data-table">
+      <thead>
+        <tr>
+          <th>Sayfa Adı</th>
+          <th>Page ID</th>
+          <th style="width:100px">Token</th>
+          <th style="width:80px"></th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for p in pages %}
+        <tr>
+          <td>
+            <i class="bi bi-facebook" style="color:#1877f2;margin-right:6px"></i>
+            <strong>{{ p.get('name', '–') }}</strong>
+          </td>
+          <td><code class="text-mono small text-muted">{{ p.get('page_id', '') }}</code></td>
+          <td>
+            {% if p.get('static_token') %}
+              <span class="pill pill-warn">Statik</span>
+            {% else %}
+              <span class="pill pill-success pill-dot">Aktif</span>
+            {% endif %}
+          </td>
+          <td style="text-align:right">
+            <form action="/settings/page/remove" method="post"
+                  data-name="{{ p.get('name', p.get('page_id', '')) }}"
+                  onsubmit="return confirm(this.dataset.name + ' silinsin mi?')">
+              <input type="hidden" name="page_id" value="{{ p.get('page_id', '') }}">
+              <button type="submit" class="btn btn-danger btn-sm btn-icon" title="Sil">
+                <i class="bi bi-trash"></i>
+              </button>
+            </form>
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon"><i class="bi bi-inbox"></i></div>
+    <div>Henüz sayfa eklenmedi.</div>
+  </div>
+  {% endif %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+function toggleToken() {
+  const inp = document.getElementById('user-token-input');
+  const eye = document.getElementById('token-eye');
+  if (inp.type === 'password') { inp.type = 'text'; eye.className = 'bi bi-eye-slash'; }
+  else { inp.type = 'password'; eye.className = 'bi bi-eye'; }
+}
+</script>
+{% endblock %}

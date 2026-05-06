@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#a7f3d0">
+  <meta name="apple-mobile-web-app-title" content="BahoAgent">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="BahoAgent">
+  <link rel="apple-touch-icon" href="/static/icon-180.png">
+  <link rel="icon" type="image/png" sizes="32x32" href="/static/icon-32.png">
+  <link rel="manifest" href="/static/manifest.json">
+  <title>Giriş — BahoAgent</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.3/font/bootstrap-icons.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    *{ box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+    html, body{ margin:0; height: 100%; }
+    body{
+      font-family:'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background:
+        radial-gradient(1000px 600px at 90% -10%, #bbf7d0 0%, transparent 60%),
+        radial-gradient(800px 500px at -10% 110%, #99f6e4 0%, transparent 60%),
+        #f7fbf8;
+      color:#052e1a;
+      display:flex; align-items:center; justify-content:center;
+      padding: 20px;
+      min-height: 100vh;
+      padding-top: max(20px, env(safe-area-inset-top));
+      padding-bottom: max(20px, env(safe-area-inset-bottom));
+    }
+    .login-card{
+      width: 100%; max-width: 420px;
+      background: rgba(255,255,255,.78);
+      backdrop-filter: blur(14px) saturate(180%);
+      -webkit-backdrop-filter: blur(14px) saturate(180%);
+      border: 1px solid rgba(15,61,39,.08);
+      border-radius: 24px;
+      padding: 30px 28px;
+      box-shadow: 0 28px 60px -22px rgba(16,128,73,.28), 0 6px 18px -10px rgba(15,61,39,.1);
+    }
+    .brand{
+      display:flex; align-items:center; gap:12px; margin-bottom: 8px;
+      font-weight: 800; font-size: 18px; letter-spacing: -.02em;
+    }
+    .brand-mark{
+      width:42px; height:42px; border-radius: 14px;
+      background: linear-gradient(135deg,#86efac 0%,#34d399 50%,#22c55e 100%);
+      display:flex; align-items:center; justify-content:center;
+      color:#fff; font-size: 20px;
+      box-shadow: 0 8px 18px -6px rgba(34,197,94,.55);
+    }
+    h1{
+      font-size: 22px; font-weight: 800; margin: 18px 0 4px;
+      letter-spacing: -.02em;
+    }
+    .sub{ color:#3f6151; font-size: 14px; margin: 0 0 24px; }
+    .field{ margin-bottom: 14px; }
+    .label{
+      display:block; font-size: 13px; font-weight: 600;
+      color:#0f3d27; margin-bottom: 6px;
+    }
+    .input{
+      width:100%; background:#fff;
+      border: 1px solid rgba(15,61,39,.14);
+      border-radius: 12px;
+      padding: 12px 14px; font-size: 15px; font-weight: 500;
+      color:#052e1a; transition: all .15s ease;
+      font-family: inherit; min-height: 46px;
+    }
+    .input:focus{
+      outline: none;
+      border-color:#34d399;
+      box-shadow: 0 0 0 4px rgba(52,211,153,.18);
+    }
+    .input-group{ display:flex; gap:8px; }
+    .pw-toggle{
+      width:46px; min-width:46px; border-radius: 12px;
+      background:#fff; border: 1px solid rgba(15,61,39,.14);
+      display:flex; align-items:center; justify-content:center;
+      color:#3f6151; cursor:pointer; transition: all .15s ease;
+    }
+    .pw-toggle:hover{ background:#f0fdf4; border-color:#86efac; color:#052e1a; }
+    .btn{
+      width:100%; min-height: 50px;
+      background: linear-gradient(135deg,#86efac 0%,#34d399 50%,#22c55e 100%);
+      color:#fff; border: 0; border-radius: 14px;
+      font-size: 15px; font-weight: 700;
+      cursor: pointer; margin-top: 8px;
+      box-shadow: 0 12px 22px -10px rgba(34,197,94,.55), inset 0 -2px 0 rgba(0,0,0,.07);
+      transition: filter .15s ease, transform .08s ease;
+      letter-spacing: -.01em;
+    }
+    .btn:hover{ filter: brightness(1.04); }
+    .btn:active{ transform: translateY(1px); }
+    .alert{
+      background:#fef2f2; color:#991b1b; border:1px solid #fecaca;
+      border-radius: 12px; padding: 10px 14px;
+      font-size: 13.5px; margin-bottom: 16px;
+      display:flex; gap:8px; align-items:center;
+    }
+    .footer-note{
+      text-align: center; color:#7a9889; font-size: 12px;
+      margin-top: 18px;
+    }
+  </style>
+</head>
+<body>
+  <div class="login-card">
+    <div class="brand">
+      <span class="brand-mark"><i class="bi bi-broadcast"></i></span>
+      <span>BahoAgent</span>
+    </div>
+    <h1>Hoş geldin 👋</h1>
+    <p class="sub">Devam etmek için giriş yap.</p>
+
+    {% if error %}
+    <div class="alert"><i class="bi bi-exclamation-circle"></i>{{ error }}</div>
+    {% endif %}
+
+    <form method="post" action="/login">
+      <div class="field">
+        <label class="label" for="u">Kullanıcı adı</label>
+        <input class="input" type="text" name="username" id="u" autofocus autocomplete="username">
+      </div>
+      <div class="field">
+        <label class="label" for="pw">Şifre</label>
+        <div class="input-group">
+          <input class="input" type="password" name="password" id="pw" autocomplete="current-password">
+          <button type="button" class="pw-toggle" onclick="const i=document.getElementById('pw'); i.type=i.type==='password'?'text':'password'; this.firstElementChild.className='bi '+(i.type==='password'?'bi-eye':'bi-eye-slash');">
+            <i class="bi bi-eye"></i>
+          </button>
+        </div>
+      </div>
+      <button type="submit" class="btn">
+        <i class="bi bi-box-arrow-in-right" style="margin-right:6px"></i>Giriş Yap
+      </button>
+    </form>
+
+    <div class="footer-note">© BahoAgent</div>
+  </div>
+</body>
+</html>

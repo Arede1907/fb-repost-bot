@@ -1,0 +1,550 @@
+{% extends "newtema/base.html" %}
+{% set active = 'repost' %}
+{% block title %}FB Repost Bot — BahoAgent{% endblock %}
+
+{% block extra_head %}
+<style>
+  /* Multi-select dropdown */
+  .ms-wrap{ position: relative; }
+  .ms-trigger{
+    width:100%; min-height: 44px;
+    background: var(--surface); color: var(--ink-900);
+    border: 1px solid var(--line-2); border-radius: 12px;
+    padding: 8px 40px 8px 12px;
+    display:flex; align-items:center; gap:6px;
+    flex-wrap: wrap; cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    font-family: inherit; font-size: 14px; text-align: left;
+    position: relative;
+  }
+  .ms-trigger:hover{ border-color: var(--mint-300); }
+  .ms-trigger.open{
+    border-color: var(--mint-400);
+    box-shadow: 0 0 0 4px rgba(52,211,153,.18);
+  }
+  .ms-trigger::after{
+    content: ""; position:absolute; right: 14px; top: 50%;
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--ink-500);
+    border-bottom: 2px solid var(--ink-500);
+    transform: translateY(-70%) rotate(45deg);
+    transition: transform .15s ease;
+  }
+  .ms-trigger.open::after{ transform: translateY(-30%) rotate(-135deg); }
+  .ms-placeholder{ color: var(--ink-300); font-weight: 500; }
+  .ms-chip{
+    display:inline-flex; align-items:center; gap:4px;
+    background: var(--mint-100); color: var(--ink-900);
+    border: 1px solid var(--mint-200);
+    padding: 3px 8px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .ms-chip .x{
+    width: 16px; height: 16px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(15,61,39,.1); color: var(--ink-700);
+    cursor: pointer; font-size: 11px;
+  }
+  .ms-chip .x:hover{ background: var(--ink-700); color:#fff; }
+
+  .ms-panel{
+    position: fixed;
+    background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: 14px; box-shadow: var(--shadow-lg);
+    z-index: 1090; max-height: 320px; overflow-y: auto;
+    display: none; padding: 6px;
+  }
+  .ms-panel.open{ display: block; }
+  .ms-option{
+    display:flex; align-items:center; gap:10px;
+    padding: 10px 12px; border-radius: 10px; cursor: pointer;
+    font-size: 14px; color: var(--ink-700); font-weight: 500;
+    user-select: none;
+  }
+  .ms-option:hover{ background: var(--mint-50); color: var(--ink-900); }
+  .ms-option.selected{ background: var(--mint-100); color: var(--ink-900); }
+  .ms-option input{
+    accent-color: var(--mint-500); width: 17px; height: 17px;
+    margin: 0; pointer-events: none;
+  }
+  .ms-empty{ padding: 18px; text-align:center; color: var(--ink-300); font-size: 13px; }
+  .ms-actions{
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 4px 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+  }
+  .ms-actions button{
+    background:none; border:0; color: var(--mint-700);
+    font-weight: 600; font-size: 12px; cursor: pointer;
+    padding: 4px 6px; border-radius: 6px;
+  }
+  .ms-actions button:hover{ background: var(--mint-100); }
+
+  /* Bot list (compact rows) */
+  .bot-list{ display:flex; flex-direction: column; gap: 10px; padding: 14px; }
+  .bot-row{
+    display:flex; align-items:center; gap: 12px;
+    padding: 12px 14px;
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .08s ease;
+  }
+  .bot-row:hover{ border-color: var(--mint-300); box-shadow: 0 4px 14px -8px rgba(16,128,73,.18); }
+  .bot-row:active{ transform: translateY(1px); }
+  .bot-avatar{
+    width: 38px; height: 38px; border-radius: 12px;
+    background: var(--grad-soft); color: var(--mint-700);
+    display:flex; align-items:center; justify-content:center;
+    font-size: 16px; flex-shrink: 0;
+    border: 1px solid var(--mint-200);
+  }
+  .bot-main{ flex: 1; min-width: 0; }
+  .bot-name{
+    font-weight: 700; color: var(--ink-900);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    font-size: 14.5px;
+  }
+  .bot-meta{
+    color: var(--ink-500); font-size: 12.5px; margin-top: 2px;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .bot-stats{
+    display:flex; align-items:center; gap: 10px; flex-shrink: 0;
+  }
+  .bot-stat{
+    text-align:center; min-width: 44px;
+  }
+  .bot-stat-val{ font-size: 16px; font-weight: 800; color: var(--ink-900); line-height: 1; }
+  .bot-stat-label{ font-size: 10.5px; color: var(--ink-500); margin-top: 3px; text-transform: uppercase; letter-spacing: .04em; }
+  .bot-chevron{ color: var(--ink-300); font-size: 18px; flex-shrink: 0; }
+
+  /* Detail overlay */
+  .bot-detail-info{
+    background: var(--surface-2); border-radius: 14px;
+    padding: 14px 16px; margin-bottom: 14px;
+  }
+  .bot-detail-row{
+    display:flex; justify-content:space-between; gap: 10px;
+    padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
+  }
+  .bot-detail-row:last-child{ border: 0; }
+  .bot-detail-row .k{ color: var(--ink-500); font-weight: 500; }
+  .bot-detail-row .v{ color: var(--ink-900); font-weight: 600; text-align: right; }
+
+  @media (max-width: 540px){
+    .bot-stat:nth-child(2){ display: none; }
+    .bot-name{ font-size: 14px; }
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title"><i class="bi bi-robot" style="color:#22c55e"></i> FB Repost Bot</h1>
+    <div class="page-sub">Kaynak Facebook sayfasını izler, hedef sayfalara repost atar.</div>
+  </div>
+</div>
+
+<!-- ── Yeni Bot Başlat ─────────────────────────────────── -->
+<div class="surface" style="margin-bottom:18px">
+  <div class="surface-head">
+    <i class="bi bi-plus-circle-fill" style="color:#22c55e"></i>
+    <span>Yeni Bot Başlat</span>
+  </div>
+  <div class="surface-body">
+    {% if not pages %}
+      <div class="alert alert-warning" style="margin:0">
+        <i class="bi bi-exclamation-triangle"></i>
+        <div>Önce <a href="/newtema/settings" style="color:#92400e;font-weight:700">Ayarlar</a>'dan Facebook sayfası ekle.</div>
+      </div>
+    {% else %}
+      <form action="/repost-bots/start" method="post" id="repost-bot-form">
+        <div class="grid grid-cols-2">
+          <div class="field">
+            <label class="field-label">İzlenecek Kaynak Sayfa</label>
+            <select class="select" name="source_page_id" required>
+              <option value="">— Seç —</option>
+              {% for p in pages %}
+                <option value="{{ p.get('page_id','') }}">{{ p.get('name', p.get('page_id','')) }}</option>
+              {% endfor %}
+            </select>
+            <div class="field-help">Yeni post geldiğinde bu sayfa izlenir.</div>
+          </div>
+
+          <div class="field">
+            <label class="field-label">Repost Yapılacak Sayfalar</label>
+            <div class="ms-wrap" id="ms-targets">
+              <button type="button" class="ms-trigger" id="ms-trigger" onclick="msToggle()">
+                <span class="ms-placeholder" id="ms-placeholder">— Sayfa seç —</span>
+                <span id="ms-chips" style="display:contents"></span>
+              </button>
+              <div class="ms-panel" id="ms-panel">
+                <div class="ms-actions">
+                  <button type="button" onclick="msSelectAll(true)">Tümünü seç</button>
+                  <button type="button" onclick="msSelectAll(false)">Temizle</button>
+                </div>
+                {% for p in pages %}
+                  <label class="ms-option" data-pid="{{ p.get('page_id','') }}" data-pname="{{ p.get('name', p.get('page_id','')) }}">
+                    <input type="checkbox" name="target_page_ids" value="{{ p.get('page_id','') }}">
+                    <span>{{ p.get('name', p.get('page_id','')) }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="field-help">Birden fazla seçebilirsin. Kaynakla aynı sayfa otomatik atlanır.</div>
+          </div>
+        </div>
+        <div style="margin-top:18px">
+          <button type="submit" class="btn btn-primary"><i class="bi bi-play-fill"></i> Botu Başlat</button>
+        </div>
+      </form>
+    {% endif %}
+  </div>
+</div>
+
+<!-- ── Aktif Botlar ─────────────────────────────────── -->
+<div class="surface">
+  <div class="surface-head">
+    <i class="bi bi-robot" style="color:#22c55e"></i>
+    <span>Aktif Botlar</span>
+    <span class="pill pill-muted" style="margin-left:8px">{{ bots|length }}</span>
+    <div class="row-flex" style="margin-left:auto;gap:6px">
+      <button class="btn btn-ghost btn-sm" onclick="refreshBots()" title="Sayaçları yenile"><i class="bi bi-arrow-clockwise"></i> Yenile</button>
+      <button class="btn btn-soft btn-sm" onclick="showActivityLog()"><i class="bi bi-file-earmark-text"></i> Aktivite Log</button>
+    </div>
+  </div>
+
+  {% if bots %}
+  <div class="bot-list">
+    {% for bot in bots %}
+    {% set d = bot.to_dict() %}
+    <div class="bot-row" id="bot-row-{{ bot.bot_id }}" onclick="openBot('{{ bot.bot_id }}')">
+      <div class="bot-avatar"><i class="bi bi-broadcast"></i></div>
+      <div class="bot-main">
+        <div class="bot-name">{{ bot.source_name }}</div>
+        <div class="bot-meta">
+          {{ d.targets | length }} hedef
+          {% if bot.last_check %} · son: {{ bot.last_check }}{% endif %}
+        </div>
+      </div>
+      <div class="bot-stats">
+        <div class="bot-stat">
+          <div class="bot-stat-val" id="repost-count-{{ bot.bot_id }}">{{ bot.posts_reposted }}</div>
+          <div class="bot-stat-label">Repost</div>
+        </div>
+        <div class="bot-stat" id="pending-stat-{{ bot.bot_id }}" {% if bot.pending_tasks == 0 %}style="opacity:.4"{% endif %}>
+          <div class="bot-stat-val" style="color:#a16207">{{ bot.pending_tasks }}</div>
+          <div class="bot-stat-label">Bekleyen</div>
+        </div>
+        <span id="status-pill-{{ bot.bot_id }}">
+          {% if bot.running %}
+            <span class="pill pill-success pill-dot">Aktif</span>
+          {% elif bot.finished %}
+            <span class="pill pill-muted">Bitti</span>
+          {% else %}
+            <span class="pill pill-muted">Durdu</span>
+          {% endif %}
+        </span>
+      </div>
+      <i class="bi bi-chevron-right bot-chevron"></i>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty">
+    <div class="empty-icon"><i class="bi bi-robot"></i></div>
+    <div>Henüz çalışan bot yok. Yukarıdan yeni bir bot başlat.</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- ── Detail Overlay ─────────────────────────────────── -->
+<div class="modal-mask" id="detailModal">
+  <div class="modal-card">
+    <div class="modal-head">
+      <i class="bi bi-broadcast"></i>
+      <span id="detail-title">Bot</span>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('detailModal')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="bot-detail-info" id="detail-info"></div>
+
+      <div class="row-flex" id="detail-actions" style="gap:8px;margin-bottom:16px"></div>
+
+      <div style="font-size: 13px; font-weight: 700; color: var(--ink-700); margin-bottom: 8px; display:flex; align-items:center; gap: 8px">
+        <i class="bi bi-terminal"></i> Son Loglar
+        <button class="btn btn-ghost btn-sm" style="margin-left:auto;min-height:28px;padding:4px 10px" onclick="refreshLog()"><i class="bi bi-arrow-clockwise"></i> Yenile</button>
+      </div>
+      <div id="log-container" style="font-family:'SF Mono',monospace;font-size:13px;background:var(--surface-2);border-radius:12px;padding:6px;max-height:340px;overflow-y:auto;border:1px solid var(--line)">
+        <div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ── Activity Log Modal ─────────────────────────────────── -->
+<div class="modal-mask" id="activityLogModal">
+  <div class="modal-card" style="max-width:1000px">
+    <div class="modal-head">
+      <i class="bi bi-file-earmark-text"></i>
+      <span>Repost Aktivite Logu</span>
+      <span class="text-muted small" id="activity-log-count" style="margin-left:8px"></span>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('activityLogModal')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" id="activity-log-container"
+         style="font-family:'SF Mono',monospace;font-size:12.5px;max-height:65vh;overflow-y:auto;background:var(--surface-2);padding:8px">
+      <div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-ghost btn-sm" onclick="loadActivityLog()"><i class="bi bi-arrow-clockwise"></i> Yenile (son 500)</button>
+      <button class="btn btn-ghost btn-sm" onclick="loadActivityLog(0)"><i class="bi bi-list-ul"></i> Tümünü Çek</button>
+      <button class="btn btn-soft btn-sm" onclick="downloadActivityLog()"><i class="bi bi-download"></i> İndir</button>
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('activityLogModal')">Kapat</button>
+    </div>
+  </div>
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Multi-select dropdown ───────────────────────────────────────
+const msPanel    = document.getElementById('ms-panel');
+const msTrigger  = document.getElementById('ms-trigger');
+const msPlace    = document.getElementById('ms-placeholder');
+const msChipsEl  = document.getElementById('ms-chips');
+
+function msPositionPanel() {
+  if (!msPanel || !msTrigger) return;
+  const r = msTrigger.getBoundingClientRect();
+  const margin = 6;
+  const spaceBelow = window.innerHeight - r.bottom;
+  const wantedH = Math.min(320, Math.max(spaceBelow - margin - 8, 180));
+  msPanel.style.left  = r.left + 'px';
+  msPanel.style.width = r.width + 'px';
+  if (spaceBelow >= 220 || spaceBelow >= r.top) {
+    msPanel.style.top    = (r.bottom + margin) + 'px';
+    msPanel.style.bottom = 'auto';
+    msPanel.style.maxHeight = wantedH + 'px';
+  } else {
+    msPanel.style.top    = 'auto';
+    msPanel.style.bottom = (window.innerHeight - r.top + margin) + 'px';
+    msPanel.style.maxHeight = Math.min(320, r.top - margin - 8) + 'px';
+  }
+}
+
+function msToggle(force) {
+  if (!msPanel) return;
+  const open = (force === undefined) ? !msPanel.classList.contains('open') : force;
+  if (open) msPositionPanel();
+  msPanel.classList.toggle('open', open);
+  msTrigger.classList.toggle('open', open);
+}
+
+window.addEventListener('resize', () => {
+  if (msPanel?.classList.contains('open')) msPositionPanel();
+});
+window.addEventListener('scroll', () => {
+  if (msPanel?.classList.contains('open')) msPositionPanel();
+}, true);
+
+function msSync() {
+  const opts = msPanel?.querySelectorAll('.ms-option') || [];
+  const selected = [];
+  opts.forEach(opt => {
+    const cb = opt.querySelector('input');
+    const isOn = cb.checked;
+    opt.classList.toggle('selected', isOn);
+    if (isOn) selected.push({ id: opt.dataset.pid, name: opt.dataset.pname });
+  });
+  if (!msChipsEl) return;
+  msChipsEl.innerHTML = '';
+  if (selected.length === 0) {
+    msPlace.style.display = '';
+  } else {
+    msPlace.style.display = 'none';
+    selected.forEach(s => {
+      const chip = document.createElement('span');
+      chip.className = 'ms-chip';
+      chip.innerHTML = `${escHtml(s.name)} <span class="x" data-pid="${s.id}">×</span>`;
+      msChipsEl.appendChild(chip);
+    });
+  }
+}
+
+function msSelectAll(on) {
+  msPanel?.querySelectorAll('input[type=checkbox]').forEach(cb => cb.checked = on);
+  msSync();
+}
+
+msPanel?.querySelectorAll('.ms-option').forEach(opt => {
+  opt.addEventListener('click', e => {
+    const cb = opt.querySelector('input');
+    cb.checked = !cb.checked;
+    msSync();
+  });
+});
+
+msChipsEl?.addEventListener('click', e => {
+  const x = e.target.closest('.x');
+  if (!x) return;
+  e.stopPropagation();
+  const pid = x.dataset.pid;
+  const cb = msPanel.querySelector(`input[value="${pid}"]`);
+  if (cb) { cb.checked = false; msSync(); }
+});
+
+document.addEventListener('click', e => {
+  if (!document.getElementById('ms-targets')?.contains(e.target)) msToggle(false);
+});
+
+// ── Detail overlay ──────────────────────────────────────────────
+const _bots = {{ bots_json | safe }};
+let _activeBotId = null;
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function openBot(botId) {
+  _activeBotId = botId;
+  const bot = _bots[botId];
+  if (!bot) return;
+  document.getElementById('detail-title').textContent = bot.source_name + ' — Bot Detayı';
+
+  const info = document.getElementById('detail-info');
+  const targets = (bot.targets || []).map(t => `<span class="pill pill-info">${escHtml(t)}</span>`).join(' ');
+  info.innerHTML = `
+    <div class="bot-detail-row"><span class="k">Durum</span><span class="v">${
+      bot.running ? '<span class="pill pill-success pill-dot">Aktif</span>'
+      : bot.finished ? '<span class="pill pill-muted">Bitti</span>'
+      : '<span class="pill pill-muted">Durdu</span>'
+    }</span></div>
+    <div class="bot-detail-row"><span class="k">Kaynak</span><span class="v">${escHtml(bot.source_name)}<br><code class="text-mono small text-muted">${escHtml(bot.source_page_id)}</code></span></div>
+    <div class="bot-detail-row"><span class="k">Hedefler (${(bot.targets||[]).length})</span><span class="v" style="display:flex;flex-wrap:wrap;gap:4px;justify-content:flex-end">${targets || '–'}</span></div>
+    <div class="bot-detail-row"><span class="k">Toplam Repost</span><span class="v">${bot.posts_reposted}</span></div>
+    <div class="bot-detail-row"><span class="k">Bekleyen</span><span class="v">${bot.pending_tasks || 0}</span></div>
+    <div class="bot-detail-row"><span class="k">Son Kontrol</span><span class="v">${escHtml(bot.last_check || '–')}</span></div>
+    <div class="bot-detail-row"><span class="k">Sonraki Kontrol</span><span class="v">${escHtml(bot.next_check || '–')}</span></div>
+  `;
+
+  // Action buttons
+  const actions = document.getElementById('detail-actions');
+  let html = '';
+  if (bot.running) {
+    html += `<form action="/repost-bots/stop/${bot.bot_id}" method="post" style="display:inline">
+              <button type="submit" class="btn btn-warn btn-sm"><i class="bi bi-pause-fill"></i> Durdur</button>
+             </form>`;
+  }
+  html += `<form action="/repost-bots/delete/${bot.bot_id}" method="post" style="display:inline"
+             onsubmit="return confirm('Bot silinsin mi?')">
+            <button type="submit" class="btn btn-danger btn-sm"><i class="bi bi-trash"></i> Sil</button>
+           </form>`;
+  actions.innerHTML = html;
+
+  refreshLog();
+  openModal('detailModal');
+}
+
+function refreshLog() {
+  if (!_activeBotId) return;
+  fetch('/api/repost-bots/' + _activeBotId + '/log')
+    .then(r => r.json())
+    .then(entries => {
+      const el = document.getElementById('log-container');
+      if (!entries.length) {
+        el.innerHTML = '<div class="text-muted text-center" style="padding:30px">Henüz log yok.</div>';
+        return;
+      }
+      const cls = { success:'#15803d', error:'#b91c1c', warn:'#a16207', info:'#1d4ed8' };
+      el.innerHTML = entries.map(e =>
+        `<div style="padding:4px 8px;border-bottom:1px solid var(--line)">
+           <span class="text-muted" style="margin-right:8px">${escHtml(e.time)}</span>
+           <span style="color:${cls[e.level]||'#0f3d27'}">${escHtml(e.text)}</span>
+         </div>`
+      ).join('');
+      el.scrollTop = el.scrollHeight;
+    });
+}
+
+function refreshBots() {
+  fetch('/api/repost-bots')
+    .then(r => r.json())
+    .then(bots => {
+      bots.forEach(bot => {
+        _bots[bot.bot_id] = bot;
+        const $ = id => document.getElementById(id);
+        if ($('repost-count-' + bot.bot_id)) $('repost-count-' + bot.bot_id).textContent = bot.posts_reposted;
+        const ps = $('pending-stat-' + bot.bot_id);
+        if (ps) {
+          ps.style.opacity = bot.pending_tasks > 0 ? '1' : '.4';
+          ps.querySelector('.bot-stat-val').textContent = bot.pending_tasks || 0;
+        }
+        const sp = $('status-pill-' + bot.bot_id);
+        if (sp) {
+          sp.innerHTML = bot.running
+            ? '<span class="pill pill-success pill-dot">Aktif</span>'
+            : bot.finished
+              ? '<span class="pill pill-muted">Bitti</span>'
+              : '<span class="pill pill-muted">Durdu</span>';
+        }
+      });
+    });
+}
+
+// ── Activity log modal ──────────────────────────────────────────
+function showActivityLog() {
+  loadActivityLog();
+  openModal('activityLogModal');
+}
+
+function loadActivityLog(n) {
+  const limit = (n === undefined) ? 500 : (n === 0 ? 9999999 : n);
+  const el = document.getElementById('activity-log-container');
+  el.innerHTML = '<div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>';
+  fetch('/api/repost-activity-log?n=' + limit)
+    .then(r => r.json())
+    .then(data => {
+      const c = document.getElementById('activity-log-count');
+      const all = data.lines.length >= data.total;
+      c.textContent = all ? `(${data.total} satır — tümü)` : `(${data.total} satırın son ${data.lines.length}'i)`;
+      if (!data.lines.length) {
+        el.innerHTML = '<div class="text-muted text-center" style="padding:30px">Henüz log yok.</div>';
+        return;
+      }
+      el.innerHTML = data.lines.map(line => {
+        let color = '#0f3d27';
+        if (line.includes('✓') || line.includes('♥')) color = '#15803d';
+        else if (line.includes('✗') || line.includes('ERROR')) color = '#b91c1c';
+        else if (line.includes('⚠')) color = '#a16207';
+        return `<div style="padding:3px 8px;border-bottom:1px solid var(--line);color:${color}">${escHtml(line)}</div>`;
+      }).join('');
+      el.scrollTop = el.scrollHeight;
+    })
+    .catch(() => {
+      document.getElementById('activity-log-container').innerHTML =
+        '<div style="color:#b91c1c;text-align:center;padding:30px">Log yüklenemedi.</div>';
+    });
+}
+
+function downloadActivityLog() {
+  fetch('/api/repost-activity-log?n=9999999')
+    .then(r => r.json())
+    .then(data => {
+      const blob = new Blob([data.lines.join('\n')], {type: 'text/plain'});
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `repost_activity_${new Date().toISOString().slice(0,19).replace(/[:T]/g,'-')}.log`;
+      a.click();
+      URL.revokeObjectURL(url);
+    });
+}
+
+setInterval(refreshBots, 15000);
+setInterval(() => {
+  if (document.getElementById('detailModal').classList.contains('open')) refreshLog();
+}, 10000);
+</script>
+{% endblock %}
