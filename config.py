@@ -73,6 +73,12 @@ FB_COOKIE_XS     = os.getenv("FB_COOKIE_XS", "")
 QUIET_HOURS_START = os.getenv("QUIET_HOURS_START", "")  # ör: "01:30"
 QUIET_HOURS_END   = os.getenv("QUIET_HOURS_END", "")    # ör: "08:30"
 
+# Twitter API credentials (OAuth 1.0a — developer.twitter.com)
+TW_API_KEY             = os.getenv("TW_API_KEY", "")
+TW_API_SECRET          = os.getenv("TW_API_SECRET", "")
+TW_ACCESS_TOKEN        = os.getenv("TW_ACCESS_TOKEN", "")
+TW_ACCESS_TOKEN_SECRET = os.getenv("TW_ACCESS_TOKEN_SECRET", "")
+
 
 def is_quiet_hours() -> bool:
     """Şu an quiet hours (gece modu) içinde mi?"""

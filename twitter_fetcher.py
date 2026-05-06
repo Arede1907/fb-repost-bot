@@ -110,8 +110,18 @@ def fetch_tweet(url_or_id: str) -> dict:
     except ValueError as e:
         return {"ok": False, "error": f"JSON parse hatası: {e}"}
 
-    # Tweet metni
+    # Tweet metni — uzun tweet'lerde (X Premium, 280+ karakter) note_tweet alanı tam metni içerir
     text = data.get("text", "") or ""
+    note_tweet = data.get("note_tweet") or {}
+    if isinstance(note_tweet, dict):
+        # note_tweet doğrudan text içerebilir veya nested yapıda olabilir
+        nt_text = (
+            note_tweet.get("text")
+            or (note_tweet.get("note_tweet_results", {}).get("result", {}).get("text"))
+            or ""
+        )
+        if len(nt_text) > len(text):
+            text = nt_text
 
     # Yazar
     user = data.get("user") or {}

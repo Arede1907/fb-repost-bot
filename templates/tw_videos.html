@@ -1,0 +1,214 @@
+{% extends "base.html" %}
+{% block content %}
+
+<style>
+  .video-card { border-color: #30363d; background: #161b22; }
+  .video-card .card-header { background: #1c2128; border-bottom-color: #30363d; }
+  .frame-img {
+    width: 100%; aspect-ratio: 16/9; object-fit: cover;
+    cursor: pointer; border-radius: 4px; border: 2px solid transparent;
+    transition: border-color .15s;
+  }
+  .frame-img.selected { border-color: #58a6ff; }
+  .frame-wrap { position: relative; }
+  .frame-check {
+    position: absolute; top: 4px; right: 4px;
+    background: #58a6ff; color: #000; border-radius: 50%;
+    width: 20px; height: 20px; font-size: 11px; font-weight: 700;
+    display: none; align-items: center; justify-content: center;
+  }
+  .frame-img.selected ~ .frame-check { display: flex; }
+  .tweet-text { font-size: .88rem; color: #c9d1d9; white-space: pre-wrap; }
+  .badge-pending { background: #d29922; }
+  #empty-state { display: {% if pending %}none{% else %}block{% endif %}; }
+</style>
+
+<div class="d-flex align-items-center justify-content-between mb-3">
+  <h5 class="mb-0"><i class="bi bi-film me-2 text-info"></i>TW Video — Onay Bekleyenler</h5>
+  <span class="badge bg-secondary" id="pending-count">{{ pending|length }} gönderi</span>
+</div>
+
+<div id="empty-state" class="text-center text-muted py-5">
+  <i class="bi bi-inbox" style="font-size:2.5rem"></i>
+  <p class="mt-2">Bekleyen video yok. Bot videolu tweet like'ladığında burada görünür.</p>
+</div>
+
+<div id="video-list">
+{% for item in pending %}
+<div class="card video-card mb-4" id="vcard-{{ item.id }}">
+  <div class="card-header d-flex align-items-center justify-content-between">
+    <div>
+      <span class="text-muted small me-2">{{ item.detected_at }}</span>
+      <a href="{{ item.tweet_url }}" target="_blank" class="text-info small">
+        <i class="bi bi-twitter-x me-1"></i>{{ item.tweet_url }}
+      </a>
+    </div>
+    <button class="btn btn-outline-secondary btn-sm"
+            onclick="dismissVideo('{{ item.id }}')">
+      <i class="bi bi-x"></i>
+    </button>
+  </div>
+  <div class="card-body">
+    <div class="row g-3">
+
+      <!-- Sol: tweet metni + sayfa seçimi + gönder -->
+      <div class="col-lg-3">
+        {% if item.text %}
+        <div class="tweet-text mb-3">{{ item.text }}</div>
+        {% endif %}
+
+        <div class="mb-2">
+          <label class="form-label small text-muted">Caption (isteğe bağlı)</label>
+          <textarea class="form-control form-control-sm bg-dark text-white border-secondary"
+                    rows="3" id="caption-{{ item.id }}">{{ item.text }}</textarea>
+        </div>
+
+        <div class="mb-3">
+          <label class="form-label small text-muted">Hedef Sayfalar</label>
+          {% for page in pages %}
+          <div class="form-check">
+            <input class="form-check-input page-check-{{ item.id }}" type="checkbox"
+                   value="{{ page.page_id }}" id="p_{{ item.id }}_{{ page.page_id }}">
+            <label class="form-check-label small" for="p_{{ item.id }}_{{ page.page_id }}">
+              {{ page.name or page.page_id }}
+            </label>
+          </div>
+          {% endfor %}
+        </div>
+
+        <button class="btn btn-success w-100"
+                onclick="shareFrames('{{ item.id }}', '{{ item.session_id }}')">
+          <i class="bi bi-send me-1"></i>Seçili Frame'leri Paylaş
+        </button>
+        <div id="result-{{ item.id }}" class="mt-2 small"></div>
+      </div>
+
+      <!-- Sağ: frame grid -->
+      <div class="col-lg-9">
+        <p class="text-muted small mb-2">
+          Frame'lere tıklayarak seç (max 10):
+        </p>
+        <div class="row g-2" id="frames-{{ item.id }}">
+          {% for frame_url in item.frames %}
+          {% set idx = loop.index0 %}
+          <div class="col-6 col-md-4 col-lg-3">
+            <div class="frame-wrap">
+              <img src="{{ frame_url }}" class="frame-img"
+                   data-idx="{{ idx }}"
+                   data-vid="{{ item.id }}"
+                   onclick="toggleFrame(this)"
+                   loading="lazy">
+              <div class="frame-check">✓</div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% if item.duration %}
+        <p class="text-muted small mt-2">
+          <i class="bi bi-clock me-1"></i>Video süresi: {{ "%.0f"|format(item.duration) }}s
+        </p>
+        {% endif %}
+      </div>
+
+    </div>
+  </div>
+</div>
+{% endfor %}
+</div>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+const _selected = {};  // video_id → Set of indices
+
+function toggleFrame(img) {
+  const vid = img.dataset.vid;
+  const idx = parseInt(img.dataset.idx);
+  if (!_selected[vid]) _selected[vid] = new Set();
+  const sel = _selected[vid];
+  if (sel.has(idx)) {
+    sel.delete(idx);
+    img.classList.remove("selected");
+  } else {
+    if (sel.size >= 10) { alert("FB'de max 10 foto."); return; }
+    sel.add(idx);
+    img.classList.add("selected");
+  }
+}
+
+async function shareFrames(videoId, sessionId) {
+  const indices  = [...(_selected[videoId] || new Set())];
+  if (indices.length === 0) { alert("En az 1 frame seç."); return; }
+
+  const pageIds = [...document.querySelectorAll(`.page-check-${videoId}:checked`)]
+                    .map(el => el.value);
+  if (pageIds.length === 0) { alert("En az 1 sayfa seç."); return; }
+
+  const caption = document.getElementById(`caption-${videoId}`)?.value || "";
+  const res     = document.getElementById(`result-${videoId}`);
+  res.innerHTML = '<span class="text-muted">Paylaşılıyor...</span>';
+
+  try {
+    const r = await fetch("/api/tw-share-frames", {
+      method: "POST",
+      headers: {"Content-Type": "application/json"},
+      body: JSON.stringify({
+        session_id:    sessionId,
+        frame_indices: indices,
+        page_ids:      pageIds,
+        caption:       caption,
+      }),
+    });
+    const d = await r.json();
+    if (d.status === "started") {
+      res.innerHTML = '<span class="text-success">✓ Paylaşım başlatıldı</span>';
+      setTimeout(() => dismissVideo(videoId), 2000);
+    } else {
+      res.innerHTML = `<span class="text-danger">✗ ${escHtml(d.msg || "Hata")}</span>`;
+    }
+  } catch (e) {
+    res.innerHTML = '<span class="text-danger">✗ Bağlantı hatası</span>';
+  }
+}
+
+async function dismissVideo(videoId) {
+  await fetch(`/api/tw-videos/${videoId}/dismiss`, { method: "POST" });
+  const card = document.getElementById(`vcard-${videoId}`);
+  if (card) card.remove();
+  updateCount();
+}
+
+function updateCount() {
+  const cards = document.querySelectorAll("[id^='vcard-']").length;
+  const el = document.getElementById("pending-count");
+  if (el) el.textContent = `${cards} gönderi`;
+  const empty = document.getElementById("empty-state");
+  if (empty) empty.style.display = cards === 0 ? "block" : "none";
+}
+
+function escHtml(s) {
+  return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+}
+
+// Nav badge — bekleyen video varsa sayı göster
+async function updateNavBadge() {
+  try {
+    const r = await fetch("/api/tw-videos");
+    const d = await r.json();
+    const nav = document.getElementById("nav-tw-videos");
+    if (!nav) return;
+    const old = nav.querySelector(".badge");
+    if (old) old.remove();
+    if (d.length > 0) {
+      const b = document.createElement("span");
+      b.className = "badge bg-danger ms-1";
+      b.textContent = d.length;
+      nav.appendChild(b);
+    }
+  } catch {}
+}
+updateNavBadge();
+setInterval(updateNavBadge, 15000);
+</script>
+{% endblock %}
