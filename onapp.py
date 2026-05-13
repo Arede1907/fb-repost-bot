@@ -296,19 +296,6 @@ def index():
     return redirect(url_for("newtema_index"))
 
 
-@app.route("/legacy")
-@login_required
-def legacy_index():
-    """Eski tema, manuel acil durum erişimi için."""
-    last = get_last_channel()
-    return render_template(
-        "index.html",
-        channel=last,
-        pages=config.FB_PAGES,
-        active_page_ids=_active_page_ids,
-        operations=list(reversed(_operations)),
-    )
-
 
 @app.route("/api/operations")
 @login_required
