@@ -344,7 +344,7 @@ def videos():
     yesterday_videos = [v for v in sorted_videos if v.get("upload_date") == yesterday]
 
     return render_template(
-        "videos.html",
+        "newtema/videos.html",
         videos=sorted_videos,
         yesterday_videos=yesterday_videos,
         channel_info=_channel_info,
@@ -398,7 +398,7 @@ def schedule_page():
     )
 
     return render_template(
-        "schedule.html",
+        "newtema/schedule.html",
         videos=selected,
         page_ids=page_ids,
         active_pages=active_pages,

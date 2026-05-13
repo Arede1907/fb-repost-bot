@@ -1,0 +1,260 @@
+{% extends "newtema/base.html" %}
+{% set active = 'videos' %}
+{% block title %}Paylaşım Zamanlaması — BahoAgent{% endblock %}
+
+{% block content %}
+<div class="surface" style="margin-bottom:14px">
+  <div class="surface-head">
+    <i class="bi bi-clock-fill" style="color:var(--mint-600)"></i>
+    <span>Paylaşım Zamanlaması</span>
+    <span class="pill pill-muted" style="margin-left:8px">{{ videos|length }} video</span>
+    <div class="row-flex" style="margin-left:auto;gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="setAllInstant()">
+        <i class="bi bi-lightning-fill"></i> Hepsini Anlık
+      </button>
+      <a href="/videos" class="btn btn-ghost btn-sm"><i class="bi bi-arrow-left"></i> Geri</a>
+    </div>
+  </div>
+
+  <!-- Sayfalar -->
+  <div style="padding:10px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px;flex-wrap:wrap;font-size:13px">
+    <span style="color:var(--ink-400)">Paylaşılacak:</span>
+    {% for p in active_pages %}
+      <span style="background:var(--mint-100);color:var(--mint-700);font-weight:600;padding:2px 10px;border-radius:999px;font-size:12px">{{ p.get('name', p.get('page_id','')) }}</span>
+    {% endfor %}
+    <span style="margin-left:4px;font-size:12px;color:var(--ink-400)">— Boş bırakılan videolar anlık paylaşılır.</span>
+  </div>
+
+  <!-- Video-saat tablosu -->
+  <table style="width:100%;font-size:13px;border-collapse:collapse">
+    <thead style="background:var(--surface-2)">
+      <tr style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-400)">
+        <th style="width:36px;padding:8px 10px;text-align:right">#</th>
+        <th style="padding:8px 14px">Başlık</th>
+        <th style="width:100px;padding:8px 10px;text-align:right">İzlenme</th>
+        <th style="width:160px;padding:8px 14px">Paylaşım Saati</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in videos %}
+      <tr style="border-top:1px solid var(--line){% if loop.index is odd %};background:rgba(0,0,0,.01){% endif %}">
+        <td style="padding:8px 10px;text-align:right;color:var(--ink-400);font-size:12px">{{ v.rank }}</td>
+        <td style="padding:8px 14px">
+          <a href="{{ v.url }}" target="_blank" style="color:var(--ink-800);text-decoration:none;font-size:13px">{{ v.title }}</a>
+        </td>
+        <td style="padding:8px 10px;text-align:right;color:var(--ink-400);font-size:12px">{{ v.views_str }}</td>
+        <td style="padding:6px 14px">
+          <div style="display:flex;align-items:center;gap:6px">
+            <input type="text" class="input schedule-time" data-vid="{{ v.id }}"
+                   placeholder="14:30" maxlength="5" autocomplete="off"
+                   style="padding:6px 10px;font-size:13px;min-height:36px;max-width:100px;font-family:'SF Mono',monospace"
+                   title="24 saat formatı: 14:30 — boş = anlık">
+            <i class="bi bi-clock" style="color:var(--ink-400);font-size:13px"></i>
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <!-- Footer -->
+  <div style="padding:12px 18px;border-top:1px solid var(--line);display:flex;align-items:center;gap:10px">
+    <span style="font-size:12px;color:var(--ink-400)"><i class="bi bi-info-circle"></i> Geçmiş saat girilirse otomatik yarına planlanır.</span>
+    <button class="btn btn-primary btn-sm" style="margin-left:auto" onclick="startShare()" id="share-btn">
+      <i class="bi bi-send-fill"></i> Paylaş
+    </button>
+  </div>
+</div>
+
+<!-- İlerleme -->
+<div class="surface" id="progress-card" style="display:none;margin-bottom:14px">
+  <div class="surface-head">
+    <div id="progress-spinner" style="width:16px;height:16px;border:2px solid var(--mint-400);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite"></div>
+    <span>İşlem Durumu</span>
+    <span class="pill pill-muted" style="margin-left:8px;font-size:11px" id="progress-summary"></span>
+  </div>
+  <div style="padding:10px 14px;max-height:320px;overflow-y:auto;font-family:'SF Mono',monospace;font-size:12px" id="progress-log"></div>
+</div>
+
+<!-- Repost -->
+<div class="surface" id="repost-card" style="display:none;margin-bottom:14px">
+  <div class="surface-head">
+    <i class="bi bi-arrow-repeat" style="color:#a16207"></i>
+    <span>Repost</span>
+    <span style="font-size:12px;color:var(--ink-400);margin-left:4px">— aynı videoyu farklı sayfalardan paylaş</span>
+  </div>
+  <div style="padding:16px 18px">
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;color:var(--ink-400);margin-bottom:6px">Repost edilecek videolar:</div>
+      <div id="repost-video-list"></div>
+    </div>
+    <div style="margin-bottom:14px">
+      <div style="font-size:12px;color:var(--ink-400);margin-bottom:8px">Repost yapılacak sayfalar:</div>
+      <div style="display:flex;flex-wrap:wrap;gap:8px">
+        {% for p in all_pages %}
+        <label class="check" style="min-height:36px">
+          <input type="checkbox" class="repost-page-cb" value="{{ p.get('page_id','') }}">
+          <span style="font-size:13px">{{ p.get('name', p.get('page_id','')) }}</span>
+        </label>
+        {% endfor %}
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:16px">
+      <span style="font-size:12px;color:var(--ink-400)">Max aralık:</span>
+      <input type="number" id="repost-interval" value="120" min="1"
+             class="input" style="width:80px;padding:5px 10px;font-size:13px;min-height:36px">
+      <span style="font-size:12px;color:var(--ink-400)">dakika içinde rastgele</span>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="btn btn-warn btn-sm" onclick="startRepost()" id="repost-btn">
+        <i class="bi bi-arrow-repeat"></i> Repost Et
+      </button>
+      <button class="btn btn-ghost btn-sm" onclick="skipRepost()">Geç →</button>
+    </div>
+  </div>
+</div>
+
+<!-- Repost ilerleme -->
+<div class="surface" id="repost-progress-card" style="display:none">
+  <div class="surface-head">
+    <div id="repost-spinner" style="width:16px;height:16px;border:2px solid #a16207;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite"></div>
+    <span>Repost Durumu</span>
+  </div>
+  <div style="padding:10px 14px;max-height:200px;overflow-y:auto;font-family:'SF Mono',monospace;font-size:12px" id="repost-log"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const pageIds = {{ page_ids | tojson }};
+
+document.querySelectorAll('.schedule-time').forEach(inp => {
+  inp.addEventListener('input', function() {
+    let v = this.value.replace(/\D/g, '');
+    if (v.length > 4) v = v.slice(0, 4);
+    if (v.length >= 3) v = v.slice(0,2) + ':' + v.slice(2);
+    this.value = v;
+    if (v.length === 5) {
+      const [h, m] = v.split(':').map(Number);
+      const valid = h >= 0 && h <= 23 && m >= 0 && m <= 59;
+      this.style.borderColor = valid ? 'var(--mint-400)' : '#ef4444';
+    } else {
+      this.style.borderColor = '';
+    }
+  });
+});
+
+function setAllInstant() {
+  document.querySelectorAll('.schedule-time').forEach(inp => { inp.value = ''; inp.style.borderColor = ''; });
+}
+
+function startShare() {
+  const invalid = [...document.querySelectorAll('.schedule-time')].filter(i => i.style.borderColor === 'rgb(239, 68, 68)');
+  if (invalid.length) { alert('Geçersiz saat formatı var. Örnek: 14:30'); return; }
+
+  const entries = [];
+  document.querySelectorAll('.schedule-time').forEach(inp => {
+    entries.push({ id: inp.dataset.vid, time_str: inp.value || null });
+  });
+
+  const card = document.getElementById('progress-card');
+  const log  = document.getElementById('progress-log');
+  const btn  = document.getElementById('share-btn');
+  card.style.display = '';
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:4px"></span>İşleniyor...';
+  log.innerHTML = '';
+
+  let successCount = 0, errorCount = 0;
+  const es = new EventSource('/stream');
+  es.onmessage = function(e) {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'ping') return;
+    let color = 'var(--ink-600)';
+    if (msg.type === 'success')   { color = 'var(--mint-600)'; successCount++; }
+    if (msg.type === 'error')     { color = '#ef4444'; errorCount++; }
+    if (msg.type === 'scheduled') { color = '#a16207'; }
+    if (msg.text) {
+      log.innerHTML += `<div style="padding:2px 0;border-bottom:1px solid var(--line);color:${color}">${msg.text}</div>`;
+      log.scrollTop = log.scrollHeight;
+    }
+    document.getElementById('progress-summary').textContent = `✓ ${successCount}  ✗ ${errorCount}`;
+    if (msg.type === 'done') {
+      document.getElementById('progress-spinner').style.display = 'none';
+      btn.disabled = false;
+      btn.innerHTML = '<i class="bi bi-send-fill"></i> Paylaş';
+      es.close();
+      if (msg.batch_id) showRepostSection(msg.batch_id);
+      else showBackButton();
+    }
+  };
+
+  fetch('/share', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ videos: entries, page_ids: pageIds })
+  });
+}
+
+let _batchId = null;
+function showRepostSection(batchId) {
+  _batchId = batchId;
+  fetch('/api/operations?batch=' + batchId).then(r => r.json()).then(ops => {
+    const successful = ops.filter(o => o.post_url);
+    if (!successful.length) { setTimeout(() => { window.location.href = '/videos'; }, 1500); return; }
+    const listEl = document.getElementById('repost-video-list');
+    listEl.innerHTML = successful.map(op =>
+      `<div style="font-size:12px;color:var(--ink-500);padding:2px 0"><i class="bi bi-check-circle-fill" style="color:var(--mint-500);margin-right:4px"></i>${op.title}</div>`
+    ).join('');
+    document.getElementById('repost-card').style.display = '';
+    document.getElementById('repost-card').scrollIntoView({ behavior: 'smooth' });
+  });
+}
+
+function startRepost() {
+  const pids = [...document.querySelectorAll('.repost-page-cb:checked')].map(cb => cb.value);
+  if (!pids.length) { alert('En az bir sayfa seçmelisin!'); return; }
+  const maxMinutes = parseInt(document.getElementById('repost-interval').value) || 60;
+  const btn = document.getElementById('repost-btn');
+  btn.disabled = true;
+  btn.innerHTML = '<span style="display:inline-block;width:14px;height:14px;border:2px solid #fff;border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;vertical-align:middle;margin-right:4px"></span>Zamanlanıyor...';
+  const rCard = document.getElementById('repost-progress-card');
+  const rLog  = document.getElementById('repost-log');
+  rCard.style.display = '';
+  rLog.innerHTML = '';
+  const es = new EventSource('/stream');
+  es.onmessage = function(e) {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'ping') return;
+    let color = 'var(--ink-600)';
+    if (msg.type === 'success')   color = 'var(--mint-600)';
+    if (msg.type === 'error')     color = '#ef4444';
+    if (msg.type === 'scheduled') color = '#a16207';
+    if (msg.text) {
+      rLog.innerHTML += `<div style="padding:2px 0;border-bottom:1px solid var(--line);color:${color}">${msg.text}</div>`;
+      rLog.scrollTop = rLog.scrollHeight;
+    }
+    if (msg.type === 'done') { document.getElementById('repost-spinner').style.display='none'; es.close(); showBackButton(); }
+  };
+  fetch('/repost', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ batch_id: _batchId, page_ids: pids, max_minutes: maxMinutes })
+  });
+}
+
+function skipRepost() { window.location.href = '/videos'; }
+
+function showBackButton() {
+  const log = document.getElementById('progress-log');
+  if (log && !document.getElementById('back-to-videos-btn')) {
+    log.insertAdjacentHTML('afterend',
+      `<div style="padding:12px 14px">
+         <a href="/videos" class="btn btn-primary btn-sm" id="back-to-videos-btn">
+           <i class="bi bi-collection-play"></i> Video Listesine Dön
+         </a>
+       </div>`);
+  }
+}
+</script>
+{% endblock %}

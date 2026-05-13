@@ -1,0 +1,175 @@
+{% extends "newtema/base.html" %}
+{% set active = 'videos' %}
+{% block title %}Videolar — BahoAgent{% endblock %}
+
+{% block content %}
+<div class="surface" style="margin-bottom:14px">
+  <div class="surface-head">
+    <i class="bi bi-collection-play-fill" style="color:var(--mint-600)"></i>
+    <span>YouTube Shorts</span>
+    {% if loaded %}
+    <span class="pill pill-muted" style="margin-left:8px">{{ videos|length }} video</span>
+    {% endif %}
+    <div class="row-flex" style="margin-left:auto;gap:8px">
+      {% if loaded %}
+      <button class="btn btn-ghost btn-sm" onclick="refreshVideos()">
+        <i class="bi bi-arrow-clockwise"></i> Yenile
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if not loaded %}
+  <!-- Yükleniyor -->
+  <div class="surface-body" style="text-align:center;padding:60px 24px" id="loading-screen">
+    <div style="width:48px;height:48px;border:3px solid var(--mint-400);border-top-color:transparent;border-radius:50%;animation:spin .8s linear infinite;margin:0 auto 20px"></div>
+    <div style="font-size:15px;font-weight:600;color:var(--ink-700);margin-bottom:8px">Shorts listesi yükleniyor...</div>
+    <div style="font-size:13px;color:var(--ink-400)" id="load-status">Lütfen bekleyin.</div>
+  </div>
+
+  {% else %}
+
+  <!-- Kanal bilgisi -->
+  <div class="surface-body" style="padding:12px 18px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <span style="font-size:13px;color:var(--ink-400)">Kaynak Kanal:</span>
+    <strong style="color:var(--ink-900)">{{ channel_info.get('name', '?') }}</strong>
+    <a href="{{ channel_info.get('url', '#') }}" target="_blank" style="color:var(--ink-400);font-size:12px"><i class="bi bi-box-arrow-up-right"></i></a>
+    <span style="margin-left:auto;font-size:12px;color:var(--ink-400)">
+      Paylaşılacak:
+      {% for p in active_pages %}
+        <span style="background:var(--mint-100);color:var(--mint-700);font-weight:600;padding:2px 8px;border-radius:999px;font-size:11px;margin-left:4px">{{ p.get('name', p.get('page_id','')) }}</span>
+      {% endfor %}
+    </span>
+  </div>
+
+  <!-- Form -->
+  <form id="video-select-form" action="/schedule" method="post">
+    {% for p in active_pages %}
+      <input type="hidden" name="page_ids" value="{{ p.get('page_id','') }}">
+    {% endfor %}
+
+    <!-- Araç çubuğu -->
+    <div style="padding:10px 14px;display:flex;align-items:center;gap:8px;border-bottom:1px solid var(--line)">
+      <button type="button" class="btn btn-ghost btn-sm" onclick="selectAll()">
+        <i class="bi bi-check-all"></i> Tümünü Seç
+      </button>
+      <button type="button" class="btn btn-ghost btn-sm" onclick="selectNone()">
+        <i class="bi bi-x"></i> Seçimi Kaldır
+      </button>
+      <button type="submit" class="btn btn-primary btn-sm" style="margin-left:auto" onclick="return validateSelection()">
+        Devam Et <i class="bi bi-arrow-right-circle-fill"></i>
+      </button>
+    </div>
+
+    <!-- Dünkü Shorts -->
+    {% if yesterday_videos %}
+    <div style="padding:8px 14px 0;border-bottom:1px solid var(--line)">
+      <div style="display:flex;align-items:center;gap:8px;padding:8px 0 6px;font-size:12px;font-weight:700;color:#a16207;text-transform:uppercase;letter-spacing:.04em">
+        <i class="bi bi-calendar-check"></i> Dün Yayınlanan
+        <span style="background:#fef3c7;color:#92400e;padding:2px 8px;border-radius:999px;font-size:11px">{{ yesterday_videos|length }}</span>
+      </div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <thead>
+          <tr style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-400)">
+            <th style="width:36px;padding:6px 8px"></th>
+            <th style="width:36px;padding:6px 8px;text-align:right">#</th>
+            <th style="padding:6px 12px">Başlık</th>
+            <th style="width:90px;padding:6px 8px;text-align:right">İzlenme</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in yesterday_videos %}
+          <tr style="border-top:1px solid var(--line);{% if v.shared %}opacity:.55{% endif %}">
+            <td style="padding:7px 8px;text-align:center">
+              <input type="checkbox" class="video-cb" name="video_ids" value="{{ v.id }}"
+                     {% if v.shared %}disabled title="Zaten paylaşıldı"{% endif %}
+                     style="width:16px;height:16px;accent-color:var(--mint-600);cursor:pointer">
+            </td>
+            <td style="padding:7px 8px;text-align:right;color:var(--ink-400);font-size:12px">{{ v.rank }}</td>
+            <td style="padding:7px 12px">
+              <a href="{{ v.url }}" target="_blank" style="color:{% if v.shared %}var(--mint-500){% else %}var(--ink-800){% endif %};text-decoration:{% if v.shared %}line-through{% else %}none{% endif %};font-size:13px">{{ v.title }}</a>
+              {% if v.shared %}<span style="background:var(--mint-100);color:var(--mint-700);font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:6px">paylaşıldı</span>{% endif %}
+            </td>
+            <td style="padding:7px 8px;text-align:right;color:var(--ink-400);font-size:12px">{{ v.views_str }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
+
+    <!-- Tüm videolar -->
+    <div>
+      <div style="padding:8px 14px 0">
+        <div style="display:flex;align-items:center;gap:8px;padding:8px 0 6px;font-size:12px;font-weight:700;color:var(--ink-500);text-transform:uppercase;letter-spacing:.04em">
+          <i class="bi bi-bar-chart-fill" style="color:#3b82f6"></i> En Çok İzlenen
+        </div>
+      </div>
+      <table style="width:100%;font-size:13px;border-collapse:collapse">
+        <thead style="position:sticky;top:0;z-index:1;background:var(--surface-2)">
+          <tr style="font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-400)">
+            <th style="width:36px;padding:6px 8px"></th>
+            <th style="width:36px;padding:6px 8px;text-align:right">#</th>
+            <th style="padding:6px 12px">Başlık</th>
+            <th style="width:90px;padding:6px 8px;text-align:right">İzlenme</th>
+            <th style="width:80px;padding:6px 8px">Tarih</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for v in videos %}
+          <tr style="border-top:1px solid var(--line);{% if loop.index is odd %}background:rgba(0,0,0,.01){% endif %}{% if v.shared %};opacity:.5{% endif %}">
+            <td style="padding:7px 8px;text-align:center">
+              <input type="checkbox" class="video-cb" name="video_ids" value="{{ v.id }}"
+                     {% if v.shared %}disabled title="Zaten paylaşıldı"{% endif %}
+                     style="width:16px;height:16px;accent-color:var(--mint-600);cursor:pointer">
+            </td>
+            <td style="padding:7px 8px;text-align:right;color:var(--ink-400);font-size:12px">{{ v.rank }}</td>
+            <td style="padding:7px 12px">
+              <a href="{{ v.url }}" target="_blank" style="color:{% if v.shared %}var(--mint-500){% else %}var(--ink-800){% endif %};text-decoration:{% if v.shared %}line-through{% else %}none{% endif %};font-size:13px">{{ v.title }}</a>
+              {% if v.shared %}<span style="background:var(--mint-100);color:var(--mint-700);font-size:10px;font-weight:700;padding:1px 6px;border-radius:999px;margin-left:6px">paylaşıldı</span>{% endif %}
+            </td>
+            <td style="padding:7px 8px;text-align:right;color:var(--ink-400);font-size:12px">{{ v.views_str }}</td>
+            <td style="padding:7px 8px;color:var(--ink-400);font-size:11px">{{ v.date_str }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+{% if not loaded %}
+window.addEventListener('DOMContentLoaded', () => {
+  fetch('/fetch-videos', { method: 'POST' }).then(() => listenProgress());
+});
+function listenProgress() {
+  const es = new EventSource('/stream');
+  es.onmessage = function(e) {
+    const msg = JSON.parse(e.data);
+    if (msg.type === 'ping') return;
+    const el = document.getElementById('load-status');
+    if (el && msg.text) el.textContent = msg.text;
+    if (msg.type === 'done' && msg.redirect) { es.close(); location.href = msg.redirect; }
+    if (msg.type === 'error') { if(el) el.textContent = '❌ ' + msg.text; es.close(); }
+  };
+}
+{% else %}
+function refreshVideos() {
+  fetch('/fetch-videos', { method: 'POST' }).then(() => location.reload());
+}
+function selectAll()  { document.querySelectorAll('.video-cb:not(:disabled)').forEach(cb => cb.checked = true); }
+function selectNone() { document.querySelectorAll('.video-cb').forEach(cb => cb.checked = false); }
+function validateSelection() {
+  if (!document.querySelectorAll('.video-cb:checked').length) {
+    alert('En az bir video seçmelisin!'); return false;
+  }
+  return true;
+}
+{% endif %}
+</script>
+{% endblock %}
