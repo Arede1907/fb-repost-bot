@@ -1,0 +1,272 @@
+{% extends "newtema/base.html" %}
+{% set active = 'kesfet' %}
+{% block title %}Aday Bul — Keşfet — BahoAgent{% endblock %}
+
+{% block extra_head %}
+<style>
+  .cand-grid{
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+  .cand-card{
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 14px; padding: 14px;
+    display: flex; flex-direction: column; gap: 8px;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .cand-card:hover{ border-color: var(--mint-300);
+                    box-shadow: 0 6px 18px -10px rgba(16,128,73,.18); }
+  .cand-head{ display:flex; align-items:center; gap: 10px; }
+  .cand-avatar{
+    width: 44px; height: 44px; border-radius: 50%;
+    background: var(--mint-100); color: var(--mint-700);
+    display:flex; align-items:center; justify-content:center;
+    font-size: 18px; flex-shrink: 0; overflow: hidden;
+  }
+  .cand-avatar img{ width:100%; height:100%; object-fit: cover; }
+  .cand-name{ font-weight: 700; font-size: 14.5px; line-height: 1.3;
+              overflow:hidden; text-overflow:ellipsis;
+              display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; }
+  .cand-meta{ font-size: 12px; color: var(--ink-500); margin-top: 2px; }
+  .cand-desc{ font-size: 12.5px; color: var(--ink-500); line-height: 1.4;
+              display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical;
+              overflow:hidden; min-height: 34px; }
+  .cand-stats{ display:flex; gap: 12px; font-size: 12.5px; color: var(--ink-700); }
+  .cand-stats b{ color: var(--ink-900); }
+  .cand-actions{ display:flex; gap: 6px; margin-top: 4px; }
+  .cand-actions .btn{ flex: 1; min-height: 34px; padding: 5px 10px; font-size: 12.5px; }
+  .verified{ color: #2563eb; }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title"><i class="bi bi-search" style="color:#22c55e"></i> Aday Bul</h1>
+    <div class="page-sub">Keyword + lokasyon ile FB sayfa havuzu çıkar.</div>
+  </div>
+  <div class="row-flex">
+    <a href="/newtema/settings" class="btn btn-ghost"><i class="bi bi-arrow-left"></i> Ayarlar</a>
+  </div>
+</div>
+
+<nav class="subnav">
+  <a href="/newtema/kesfet"><i class="bi bi-fire"></i> Trendler</a>
+  <a href="/newtema/kesfet/aday-bul" class="is-active"><i class="bi bi-search"></i> Aday Bul</a>
+  <a href="/newtema/kesfet/alternatif"><i class="bi bi-shuffle"></i> Alternatif Scraper</a>
+</nav>
+
+<!-- Arama formu -->
+<div class="surface" style="margin-bottom: 18px">
+  <div class="surface-head">
+    <i class="bi bi-funnel-fill" style="color:#22c55e"></i>
+    <span>Arama Parametreleri</span>
+  </div>
+  <div class="surface-body">
+    <div class="grid grid-cols-2" style="margin-bottom:14px">
+      <div class="field">
+        <label class="field-label">Keyword'ler (virgülle ayır)</label>
+        <input type="text" class="input" id="kw-input"
+               placeholder="spor, futbol, transfer haberleri, F1"
+               value="spor, futbol, transfer haberleri">
+        <div class="field-help">Her keyword için ayrı arama yapılır.</div>
+      </div>
+      <div class="field">
+        <label class="field-label">Lokasyon (opsiyonel)</label>
+        <input type="text" class="input" id="loc-input"
+               placeholder="Türkiye, İstanbul" value="Türkiye">
+        <div class="field-help">Boş bırakırsan global aranır.</div>
+      </div>
+    </div>
+    <div class="row-flex" style="gap:10px;align-items:center">
+      <label class="field-label" style="margin:0">Max sonuç:</label>
+      <select class="select" id="max-select" style="width:auto;min-width:120px">
+        <option value="20">20</option>
+        <option value="50" selected>50</option>
+        <option value="100">100</option>
+        <option value="200">200</option>
+      </select>
+      <button class="btn btn-primary" onclick="startSearch()" id="start-btn">
+        <i class="bi bi-play-fill"></i> Aramayı Başlat
+      </button>
+      <span id="search-status" class="text-muted small"></span>
+    </div>
+  </div>
+</div>
+
+<!-- Filter tabs -->
+<div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px">
+  {% set tabs = [
+    ('pending',   'Bekleyen',   'bi-hourglass-split'),
+    ('added',     'Havuzda',    'bi-check-circle-fill'),
+    ('dismissed', 'Atlanmış',   'bi-x-circle'),
+    ('all',       'Hepsi',      'bi-collection'),
+  ] %}
+  {% for key, label, icon in tabs %}
+    <a href="?status={{ key }}&sort={{ active_sort }}&min_followers={{ filters.min_followers }}&verified={{ '1' if filters.verified else '' }}&with_bio={{ '1' if filters.with_bio else '' }}&cat={{ filters.cat }}"
+       class="btn btn-sm {% if active_status == key %}btn-soft{% else %}btn-ghost{% endif %}"
+       style="text-decoration:none">
+      <i class="bi {{ icon }}"></i> {{ label }}
+      <span class="pill pill-muted" style="margin-left:4px;font-size:11px">{{ counts[key] }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+<!-- Filtre çubuğu -->
+<form method="get" action="/newtema/kesfet/aday-bul" class="surface" style="margin-bottom:18px">
+  <input type="hidden" name="status" value="{{ active_status }}">
+  <div class="surface-body" style="padding:14px 16px">
+    <div class="row-flex" style="gap:12px;align-items:flex-end;flex-wrap:wrap">
+
+      <div class="field" style="flex:1;min-width:140px">
+        <label class="field-label">Min takipçi</label>
+        <input type="number" class="input" name="min_followers"
+               value="{{ filters.min_followers or '' }}" placeholder="0" min="0" step="500">
+      </div>
+
+      <div class="field" style="flex:1.4;min-width:160px">
+        <label class="field-label">Kategori içerir</label>
+        <input type="text" class="input" name="cat" value="{{ filters.cat }}"
+               placeholder="sport, football, news…">
+      </div>
+
+      <div class="field" style="flex:1;min-width:140px">
+        <label class="field-label">Sırala</label>
+        <select class="select" name="sort">
+          <option value="followers"  {% if active_sort=='followers'  %}selected{% endif %}>Takipçi</option>
+          <option value="name"       {% if active_sort=='name'       %}selected{% endif %}>İsim (A-Z)</option>
+          <option value="category"   {% if active_sort=='category'   %}selected{% endif %}>Kategori</option>
+          <option value="discovered" {% if active_sort=='discovered' %}selected{% endif %}>Bulunma</option>
+        </select>
+      </div>
+
+      <div class="row-flex" style="gap:10px;flex-wrap:wrap">
+        <label class="check" style="min-height:44px">
+          <input type="checkbox" name="verified" value="1" {% if filters.verified %}checked{% endif %}>
+          <span><i class="bi bi-patch-check-fill" style="color:#2563eb"></i> Yalnız doğrulanmış</span>
+        </label>
+        <label class="check" style="min-height:44px">
+          <input type="checkbox" name="with_bio" value="1" {% if filters.with_bio %}checked{% endif %}>
+          <span><i class="bi bi-card-text"></i> Bio dolu</span>
+        </label>
+      </div>
+
+      <div class="row-flex" style="gap:6px">
+        <button type="submit" class="btn btn-primary"><i class="bi bi-funnel"></i> Filtrele</button>
+        <a href="?status={{ active_status }}" class="btn btn-ghost btn-sm" title="Filtreleri temizle">
+          <i class="bi bi-x-lg"></i>
+        </a>
+      </div>
+    </div>
+  </div>
+</form>
+
+{% if not items %}
+  <div class="empty">
+    <div class="empty-icon"><i class="bi bi-search"></i></div>
+    <div style="font-weight:700;margin-bottom:6px">Henüz aday yok</div>
+    <div class="small">Yukarıdan keyword gir ve "Aramayı Başlat"a bas. Apify çalışır, 1-2dk içinde sonuçlar burada görünür.</div>
+  </div>
+{% else %}
+
+<div class="cand-grid">
+  {% for c in items %}
+    <div class="cand-card" id="cand-{{ c.id }}">
+      <div class="cand-head">
+        <div class="cand-avatar">
+          {% if c.photo %}<img src="{{ c.photo }}" alt="">{% else %}<i class="bi bi-facebook"></i>{% endif %}
+        </div>
+        <div style="flex:1;min-width:0">
+          <div class="cand-name">
+            {{ c.name or '–' }}
+            {% if c.is_verified %}<i class="bi bi-patch-check-fill verified" title="Doğrulanmış"></i>{% endif %}
+          </div>
+          <div class="cand-meta">{{ c.category or 'Kategori yok' }}</div>
+        </div>
+      </div>
+      {% if c.description %}
+        <div class="cand-desc">{{ c.description }}</div>
+      {% else %}
+        <div class="cand-desc text-muted">—</div>
+      {% endif %}
+      <div class="cand-stats">
+        {% if c.followers %}<span><b>{{ "{:,}".format(c.followers) }}</b> takipçi</span>{% endif %}
+        {% if c.likes and (not c.followers or c.likes != c.followers) %}<span><b>{{ "{:,}".format(c.likes) }}</b> beğeni</span>{% endif %}
+        {% if c.website %}<span title="{{ c.website }}"><i class="bi bi-globe2"></i> web</span>{% endif %}
+        {% if c.phone %}<span title="{{ c.phone }}"><i class="bi bi-telephone"></i></span>{% endif %}
+      </div>
+      <div class="cand-actions">
+        <a href="{{ c.page_url }}" target="_blank" class="btn btn-ghost btn-sm"><i class="bi bi-box-arrow-up-right"></i> Aç</a>
+        {% if c.status != 'added' %}
+          <button class="btn btn-primary btn-sm" onclick="setCandStatus('{{ c.id }}','added')">
+            <i class="bi bi-plus-lg"></i> Havuza
+          </button>
+        {% endif %}
+        {% if c.status != 'dismissed' %}
+          <button class="btn btn-ghost btn-sm" onclick="setCandStatus('{{ c.id }}','dismissed')" title="Atla">
+            <i class="bi bi-x-lg"></i>
+          </button>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function startSearch() {
+  const btn  = document.getElementById('start-btn');
+  const stat = document.getElementById('search-status');
+  const kw   = document.getElementById('kw-input').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const loc  = document.getElementById('loc-input').value.split(',').map(s=>s.trim()).filter(Boolean);
+  const mx   = parseInt(document.getElementById('max-select').value);
+
+  if (!kw.length) { alert('En az 1 keyword gir.'); return; }
+  btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Başlatılıyor...';
+  stat.textContent = '';
+
+  try {
+    const r = await fetch('/api/discovery/search-candidates', {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ keywords: kw, locations: loc, max_items: mx }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      stat.innerHTML = '<span style="color:#15803d">✓ Apify\'de çalışıyor (run: ' + d.run_id +
+                       ') — 1-3dk içinde sonuçlar bu sayfaya düşer. Sayfayı yenile.</span>';
+    } else {
+      stat.innerHTML = '<span style="color:#b91c1c">✗ ' + (d.error || 'hata') + '</span>';
+    }
+  } catch (e) {
+    stat.innerHTML = '<span style="color:#b91c1c">✗ ' + e.message + '</span>';
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> Aramayı Başlat';
+  }
+}
+
+async function setCandStatus(id, status) {
+  try {
+    const r = await fetch(`/api/discovery/candidates/${id}/status`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ status }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const el = document.getElementById('cand-' + id);
+      if (el) {
+        el.style.transition = 'opacity .25s, transform .25s';
+        el.style.opacity = '0'; el.style.transform = 'scale(.95)';
+        setTimeout(() => el.remove(), 250);
+      }
+      setTimeout(() => location.reload(), 600);
+    }
+  } catch (e) { alert('Hata: ' + e.message); }
+}
+</script>
+{% endblock %}

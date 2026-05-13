@@ -9,6 +9,9 @@
     <h1 class="page-title"><i class="bi bi-gear-fill" style="color:#22c55e"></i> Ayarlar</h1>
     <div class="page-sub">Token'lar, sayfalar ve oturum bilgileri.</div>
   </div>
+  <div class="row-flex">
+    <a href="/newtema/kesfet" class="btn btn-soft"><i class="bi bi-compass"></i> Sayfa Otomasyonu</a>
+  </div>
 </div>
 
 <div class="grid grid-cols-2" style="margin-bottom:18px">
@@ -134,6 +137,41 @@
           <span class="pill pill-success pill-dot">Cookie kayıtlı (c_user: {{ fb_c_user }})</span>
         {% endif %}
       </div>
+    </form>
+  </div>
+</div>
+
+<!-- Twitter Hesap 2 -->
+<div class="surface" style="margin-bottom:18px">
+  <div class="surface-head">
+    <i class="bi bi-twitter-x" style="color:#000"></i>
+    <span>Twitter — 2. Hesap Token'ları</span>
+    {% if tw2_ready %}
+      <span class="pill pill-success pill-dot" style="margin-left:auto">Tanımlı</span>
+    {% else %}
+      <span class="pill pill-muted" style="margin-left:auto">Tanımsız</span>
+    {% endif %}
+  </div>
+  <div class="surface-body">
+    <div class="text-muted small" style="margin-bottom:12px;line-height:1.55">
+      Aynı developer app'in farklı bir Twitter hesabına ait access token'ları.
+      API Key / API Secret değişmez; sadece bu iki alan farklıdır.<br>
+      <strong>Nasıl alınır:</strong> <a href="https://developer.twitter.com/en/portal/projects-and-apps" target="_blank" style="color:#60a5fa">developer.twitter.com</a> → App → "Keys and tokens" → "Access Token and Secret" → Generate (2. hesapla giriş yaparak).
+    </div>
+    <form action="/settings/tw2-tokens" method="post">
+      <div class="grid grid-cols-2" style="margin-bottom:12px">
+        <div class="field">
+          <label class="field-label">Access Token</label>
+          <input type="password" class="input font-mono" name="tw2_access_token"
+                 placeholder="{{ '*' * 20 if tw2_ready else '1234567890-...' }}">
+        </div>
+        <div class="field">
+          <label class="field-label">Access Token Secret</label>
+          <input type="password" class="input font-mono" name="tw2_access_token_secret"
+                 placeholder="{{ '*' * 20 if tw2_ready else 'abc123...' }}">
+        </div>
+      </div>
+      <button type="submit" class="btn btn-soft btn-sm"><i class="bi bi-floppy"></i> Kaydet</button>
     </form>
   </div>
 </div>

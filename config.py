@@ -73,11 +73,23 @@ FB_COOKIE_XS     = os.getenv("FB_COOKIE_XS", "")
 QUIET_HOURS_START = os.getenv("QUIET_HOURS_START", "")  # ör: "01:30"
 QUIET_HOURS_END   = os.getenv("QUIET_HOURS_END", "")    # ör: "08:30"
 
-# Twitter API credentials (OAuth 1.0a — developer.twitter.com)
+# Twitter API credentials — Hesap 1 (OAuth 1.0a — developer.twitter.com)
 TW_API_KEY             = os.getenv("TW_API_KEY", "")
 TW_API_SECRET          = os.getenv("TW_API_SECRET", "")
 TW_ACCESS_TOKEN        = os.getenv("TW_ACCESS_TOKEN", "")
 TW_ACCESS_TOKEN_SECRET = os.getenv("TW_ACCESS_TOKEN_SECRET", "")
+
+# Twitter API credentials — Hesap 2 (aynı developer app, farklı kullanıcı)
+# API key/secret aynı kalır; sadece access token çifti farklı olur.
+TW2_ACCESS_TOKEN        = os.getenv("TW2_ACCESS_TOKEN", "")
+TW2_ACCESS_TOKEN_SECRET = os.getenv("TW2_ACCESS_TOKEN_SECRET", "")
+TW3_ACCESS_TOKEN        = os.getenv("TW3_ACCESS_TOKEN", "")
+TW3_ACCESS_TOKEN_SECRET = os.getenv("TW3_ACCESS_TOKEN_SECRET", "")
+
+# Cache'lenmiş Twitter kullanıcı adları (otomatik doldurulur, elle değiştirme)
+TW_ACCOUNT1_NAME = os.getenv("TW_ACCOUNT1_NAME", "")
+TW_ACCOUNT2_NAME = os.getenv("TW_ACCOUNT2_NAME", "")
+TW_ACCOUNT3_NAME = os.getenv("TW_ACCOUNT3_NAME", "")
 
 
 def is_quiet_hours() -> bool:

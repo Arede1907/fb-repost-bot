@@ -1,0 +1,273 @@
+{% extends "newtema/base.html" %}
+{% set active = 'kesfet' %}
+{% block title %}Keşfet — BahoAgent{% endblock %}
+
+{% block extra_head %}
+<style>
+  .filter-tabs{
+    display:flex; gap:6px; flex-wrap:wrap; margin-bottom: 18px;
+  }
+  .filter-tabs a{
+    padding: 8px 14px; border-radius: 999px;
+    background: var(--surface); border: 1px solid var(--line-2);
+    color: var(--ink-700); text-decoration: none;
+    font-size: 13.5px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 6px;
+    transition: all .15s ease;
+  }
+  .filter-tabs a:hover{ border-color: var(--mint-300); background: var(--mint-50); }
+  .filter-tabs a.is-active{
+    background: var(--mint-150); border-color: var(--mint-300);
+    color: var(--ink-900);
+  }
+  .filter-tabs a .count{
+    background: rgba(15,61,39,.08); padding: 1px 7px;
+    border-radius: 999px; font-size: 11.5px; font-weight: 700;
+  }
+  html[data-theme="dark"] .filter-tabs a .count{ background: rgba(255,255,255,.08); }
+
+  .sort-row{
+    display:flex; gap: 8px; align-items: center; flex-wrap: wrap;
+    margin-bottom: 18px; font-size: 13.5px;
+  }
+  .sort-row label{ color: var(--ink-500); font-weight: 600; }
+
+  .item-grid{
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  }
+  .item-card{
+    background: var(--surface); border: 1px solid var(--line);
+    border-radius: 16px; overflow: hidden;
+    display: flex; flex-direction: column;
+    transition: border-color .15s ease, box-shadow .15s ease;
+  }
+  .item-card:hover{
+    border-color: var(--mint-300);
+    box-shadow: 0 6px 20px -10px rgba(16,128,73,.22);
+  }
+  .item-thumb{
+    width: 100%; aspect-ratio: 16/10; object-fit: cover;
+    background: var(--surface-2);
+    display: block;
+    cursor: pointer;
+  }
+  .item-thumb-placeholder{
+    width: 100%; aspect-ratio: 16/10;
+    background: var(--surface-2);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--ink-300); font-size: 30px;
+  }
+  .video-badge{
+    position: absolute; top: 8px; left: 8px;
+    background: rgba(0,0,0,.65); color: #fff;
+    padding: 3px 8px; border-radius: 6px;
+    font-size: 11px; font-weight: 600;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+  .item-thumb-wrap{ position: relative; }
+
+  .item-body{ padding: 12px 14px; flex: 1; display:flex; flex-direction:column; gap: 8px; }
+  .item-caption{
+    font-size: 13.5px; line-height: 1.45;
+    color: var(--ink-900); font-weight: 500;
+    display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical;
+    overflow: hidden; text-overflow: ellipsis;
+    min-height: 58px;
+  }
+  .item-meta{
+    display:flex; gap: 10px; flex-wrap: wrap;
+    font-size: 11.5px; color: var(--ink-500);
+  }
+  .item-meta span{ display:inline-flex; align-items:center; gap: 3px; }
+  .item-source{
+    font-size: 12px; color: var(--ink-500);
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+
+  .item-actions{
+    display:flex; gap: 6px;
+    padding: 10px 12px; border-top: 1px solid var(--line);
+    background: var(--surface-2);
+  }
+  .item-actions .btn{ flex: 1; min-height: 36px; padding: 6px 10px; font-size: 12.5px; }
+  .item-actions .btn-icon{ flex: 0 0 36px; }
+
+  .empty-discovery{
+    padding: 60px 20px; text-align: center; color: var(--ink-500);
+    background: var(--surface); border: 1px dashed var(--line-2);
+    border-radius: 16px;
+  }
+
+  .score-pill{
+    background: var(--mint-100); color: var(--ink-700);
+    border: 1px solid var(--mint-200);
+    padding: 2px 8px; border-radius: 999px;
+    font-size: 11.5px; font-weight: 700;
+    display: inline-flex; align-items: center; gap: 4px;
+  }
+</style>
+{% endblock %}
+
+{% block content %}
+
+<div class="page-header">
+  <div>
+    <h1 class="page-title"><i class="bi bi-compass" style="color:#22c55e"></i> Keşfet</h1>
+    <div class="page-sub">Trend içerikleri keşfet, aday sayfaları bul, alternatif scraper'ı dene.</div>
+  </div>
+  <div class="row-flex">
+    <a href="/newtema/settings" class="btn btn-ghost"><i class="bi bi-arrow-left"></i> Ayarlar</a>
+    <button class="btn btn-ghost" onclick="location.reload()"><i class="bi bi-arrow-clockwise"></i> Yenile</button>
+  </div>
+</div>
+
+<nav class="subnav">
+  <a href="/newtema/kesfet" class="is-active"><i class="bi bi-fire"></i> Trendler</a>
+  <a href="/newtema/kesfet/aday-bul"><i class="bi bi-search"></i> Aday Bul</a>
+  <a href="/newtema/kesfet/alternatif"><i class="bi bi-shuffle"></i> Alternatif Scraper</a>
+</nav>
+
+<!-- Status tabs -->
+<div class="filter-tabs">
+  {% set tabs = [
+    ('pending',   'Bekleyen',     'bi-hourglass-split'),
+    ('starred',   'İlginç',       'bi-star-fill'),
+    ('posted',    'Paylaşıldı',   'bi-check-circle-fill'),
+    ('dismissed', 'Reddedildi',   'bi-x-circle'),
+    ('all',       'Hepsi',        'bi-collection'),
+  ] %}
+  {% for key, label, icon in tabs %}
+    <a href="?status={{ key }}&sort={{ active_sort }}"
+       class="{% if active_status == key %}is-active{% endif %}">
+      <i class="bi {{ icon }}"></i> {{ label }}
+      <span class="count">{{ counts[key] }}</span>
+    </a>
+  {% endfor %}
+</div>
+
+<!-- Sort -->
+<div class="sort-row">
+  <label>Sırala:</label>
+  {% for key, label in [('score','Engagement'), ('date','Tarih'), ('views','İzlenme')] %}
+    <a href="?status={{ active_status }}&sort={{ key }}"
+       class="btn btn-sm {% if active_sort == key %}btn-soft{% else %}btn-ghost{% endif %}">
+      {{ label }}
+    </a>
+  {% endfor %}
+</div>
+
+{% if not items %}
+  <div class="empty-discovery">
+    <div style="font-size:42px;margin-bottom:10px;color:var(--ink-300)"><i class="bi bi-inbox"></i></div>
+    {% if active_status == 'pending' %}
+      <div style="font-weight:700;margin-bottom:6px">Henüz bekleyen içerik yok</div>
+      <div class="small">Apify scheduled task çalışınca burada görünür.</div>
+    {% else %}
+      <div>{{ active_status }} kategorisinde içerik yok.</div>
+    {% endif %}
+  </div>
+{% else %}
+
+<div class="item-grid">
+  {% for it in items %}
+    {% set m = it.metrics or {} %}
+    {% set has_video = it.media | selectattr('type','equalto','video') | list | length > 0 %}
+    <div class="item-card" id="item-{{ it.id }}">
+      <div class="item-thumb-wrap">
+        {% if it.thumbnail %}
+          <a href="{{ it.source_url }}" target="_blank" rel="noopener">
+            <img src="{{ it.thumbnail }}" class="item-thumb" loading="lazy"
+                 onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">
+            <div class="item-thumb-placeholder" style="display:none">
+              <i class="bi bi-image"></i>
+            </div>
+          </a>
+        {% else %}
+          <a href="{{ it.source_url }}" target="_blank" rel="noopener">
+            <div class="item-thumb-placeholder">
+              <i class="bi {% if has_video %}bi-play-circle{% else %}bi-file-text{% endif %}"></i>
+            </div>
+          </a>
+        {% endif %}
+        {% if has_video %}
+          <div class="video-badge"><i class="bi bi-play-fill"></i> Video</div>
+        {% endif %}
+      </div>
+
+      <div class="item-body">
+        <div class="item-source">
+          <i class="bi bi-facebook" style="color:#1877f2"></i>
+          {{ it.source_page.name or '–' }}
+        </div>
+        <div class="item-caption">{{ it.caption or '(metin yok)' }}</div>
+        <div class="item-meta">
+          {% if m.likes %}<span><i class="bi bi-hand-thumbs-up"></i> {{ "{:,}".format(m.likes) }}</span>{% endif %}
+          {% if m.comments %}<span><i class="bi bi-chat"></i> {{ "{:,}".format(m.comments) }}</span>{% endif %}
+          {% if m.shares %}<span><i class="bi bi-share"></i> {{ "{:,}".format(m.shares) }}</span>{% endif %}
+          {% if m.views %}<span><i class="bi bi-eye"></i> {{ "{:,}".format(m.views) }}</span>{% endif %}
+        </div>
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-top:4px">
+          <span class="score-pill"><i class="bi bi-graph-up"></i> {{ "{:,}".format(m.score or 0) }}</span>
+          <span class="small text-muted">{{ it.discovered_at[5:16] | replace('T',' ') }}</span>
+        </div>
+      </div>
+
+      <div class="item-actions">
+        <a href="{{ it.source_url }}" target="_blank" rel="noopener"
+           class="btn btn-ghost btn-sm" title="FB'de aç">
+          <i class="bi bi-box-arrow-up-right"></i> Aç
+        </a>
+        {% if it.status != 'starred' %}
+        <button class="btn btn-soft btn-sm" onclick="setStatus('{{ it.id }}','starred')" title="İlginç">
+          <i class="bi bi-star"></i>
+        </button>
+        {% endif %}
+        {% if it.status != 'posted' %}
+        <button class="btn btn-primary btn-sm" onclick="setStatus('{{ it.id }}','posted')" title="Paylaşıldı işaretle">
+          <i class="bi bi-check-lg"></i>
+        </button>
+        {% endif %}
+        {% if it.status != 'dismissed' %}
+        <button class="btn btn-ghost btn-sm btn-icon" onclick="setStatus('{{ it.id }}','dismissed')" title="Reddet">
+          <i class="bi bi-x-lg"></i>
+        </button>
+        {% endif %}
+      </div>
+    </div>
+  {% endfor %}
+</div>
+
+{% endif %}
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+async function setStatus(id, status) {
+  try {
+    const r = await fetch(`/api/discovery/${id}/status`, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({ status }),
+    });
+    const d = await r.json();
+    if (d.ok) {
+      const el = document.getElementById('item-' + id);
+      if (el) {
+        el.style.transition = 'opacity .25s ease, transform .25s ease';
+        el.style.opacity = '0';
+        el.style.transform = 'scale(.95)';
+        setTimeout(() => el.remove(), 250);
+      }
+      // Counts'u güncellemek için sayfayı sessizce yenile (1s sonra)
+      setTimeout(() => location.reload(), 700);
+    } else {
+      alert('İşlem başarısız.');
+    }
+  } catch (e) {
+    alert('Bağlantı hatası: ' + e.message);
+  }
+}
+</script>
+{% endblock %}

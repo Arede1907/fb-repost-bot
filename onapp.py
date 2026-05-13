@@ -3,6 +3,7 @@ Flask Web UI — YouTube Shorts → Facebook Bot
 Terminal versiyonu (main.py) bozulmadan çalışmaya devam eder.
 Başlatmak için: python app.py
 """
+import heapq
 import json
 import os
 import queue
@@ -31,9 +32,17 @@ from video_downloader import delete_video, download_video
 from youtube_monitor import fetch_shorts, verify_and_get_turkish_title
 from fb_monitor import FBRepostBot
 from tw_monitor import TWLikeBot
+import discovery
 
 app = Flask(__name__)
 app.secret_key = os.getenv("FLASK_SECRET", "fbbot-flask-secret-change-me")
+app.config["SESSION_COOKIE_SECURE"]   = True
+app.config["SESSION_COOKIE_HTTPONLY"] = True
+app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
+
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
+_limiter = Limiter(get_remote_address, app=app, default_limits=[], storage_uri="memory://")
 
 
 @app.after_request
@@ -77,6 +86,7 @@ def login_required(f):
 
 
 @app.route("/login", methods=["GET", "POST"])
+@_limiter.limit("5 per 15 minutes", methods=["POST"], error_message="Çok fazla deneme. 15 dakika bekleyin.")
 def login_page():
     if request.method == "POST":
         username = request.form.get("username", "").strip()
@@ -102,7 +112,7 @@ _progress: queue.Queue = queue.Queue()
 _active_page_ids: list[str] = []
 _operations: list[dict] = []          # Bu oturumdaki tüm işlemler
 _repost_bots: dict[str, FBRepostBot] = {}   # bot_id → bot
-_tw_bot: TWLikeBot | None = None            # Tek TW like bot instance'ı
+_tw_bots: dict[str, TWLikeBot] = {}         # bot_id → TWLikeBot
 
 # ─── TW Like bot persistence ─────────────────────────────────────────────────
 TW_BOT_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
@@ -110,12 +120,16 @@ TW_BOT_STATE_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 
 def _save_tw_bot_state() -> None:
-    global _tw_bot
-    if _tw_bot is None:
+    if not _tw_bots:
+        if os.path.exists(TW_BOT_STATE_FILE):
+            try:
+                os.remove(TW_BOT_STATE_FILE)
+            except Exception:
+                pass
         return
     try:
-        data = {"version": 1, "saved_at": datetime.now().isoformat(),
-                "bot": _tw_bot.to_state_dict()}
+        data = {"version": 2, "saved_at": datetime.now().isoformat(),
+                "bots": [b.to_state_dict() for b in _tw_bots.values()]}
         tmp = TW_BOT_STATE_FILE + ".tmp"
         with open(tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
@@ -125,25 +139,28 @@ def _save_tw_bot_state() -> None:
 
 
 def _load_tw_bot_state() -> None:
-    global _tw_bot
     if not os.path.exists(TW_BOT_STATE_FILE):
         return
     try:
         with open(TW_BOT_STATE_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
-        bot_data = data.get("bot")
-        if not bot_data:
-            return
-        bot = TWLikeBot.from_state_dict(bot_data, config.FB_PAGES)
-        if bot is None:
-            print("[tw-state] bot restore edilemedi (hedef sayfalar bulunamadı)")
-            return
-        if bot_data.get("running"):
-            bot.start()
-            print("[tw-state] TW Like Bot yeniden başlatıldı")
+        version = data.get("version", 1)
+        if version == 1:
+            # Eski tek-bot formatı — geriye dönük uyumluluk
+            bots_data = [data["bot"]] if data.get("bot") else []
         else:
-            bot.finished = True
-        _tw_bot = bot
+            bots_data = data.get("bots", [])
+        for bot_data in bots_data:
+            bot = TWLikeBot.from_state_dict(bot_data, config.FB_PAGES)
+            if bot is None:
+                print(f"[tw-state] bot atlandı (sayfalar bulunamadı): {bot_data.get('bot_id')}")
+                continue
+            if bot_data.get("running"):
+                bot.start()
+                print(f"[tw-state] TW Like Bot {bot.bot_id} yeniden başlatıldı")
+            else:
+                bot.finished = True
+            _tw_bots[bot.bot_id] = bot
     except Exception as e:
         print(f"[tw-state] load failed: {e}")
 
@@ -220,7 +237,7 @@ def _periodic_save_loop():
             time.sleep(30)
             if _repost_bots:
                 _save_repost_bots_state()
-            if _tw_bot is not None:
+            if _tw_bots:
                 _save_tw_bot_state()
         except Exception as e:
             print(f"[periodic-save] error: {e}")
@@ -926,16 +943,18 @@ def tw_bot_page():
 @app.route("/tw-bot/start", methods=["POST"])
 @login_required
 def start_tw_bot():
-    global _tw_bot
     instant_ids = request.form.getlist("instant_page_ids")
     queued_ids  = request.form.getlist("queued_page_ids")
+    prime_ids   = request.form.getlist("prime_page_ids")
+    bot_name    = request.form.get("bot_name", "").strip()
 
-    if not instant_ids and not queued_ids:
+    if not instant_ids and not queued_ids and not prime_ids:
         flash("En az bir sayfa seçmelisin.", "danger")
         return _smart_redirect("tw_bot_page")
 
     instant_pages = [p for p in config.FB_PAGES if p["page_id"] in instant_ids]
     queued_pages  = [p for p in config.FB_PAGES if p["page_id"] in queued_ids]
+    prime_pages   = [p for p in config.FB_PAGES if p["page_id"] in prime_ids]
 
     try:
         interval_min = int(request.form.get("check_interval", 15))
@@ -943,64 +962,283 @@ def start_tw_bot():
     except (TypeError, ValueError):
         interval_min = 15
 
-    if _tw_bot and _tw_bot.running:
-        _tw_bot.stop()
+    try:
+        tw_account = int(request.form.get("tw_account", 1))
+        tw_account = tw_account if tw_account in (1, 2, 3) else 1
+    except (TypeError, ValueError):
+        tw_account = 1
 
-    _tw_bot = TWLikeBot(instant_pages, queued_pages, check_interval=interval_min * 60)
-    _tw_bot.start()
+    watermark_icon  = request.form.get("watermark_icon", "").strip()
+    auto_post_video = request.form.get("auto_post_video") == "on"
+
+    bot = TWLikeBot(instant_pages, queued_pages, prime_pages,
+                    check_interval=interval_min * 60,
+                    bot_name=bot_name,
+                    tw_account=tw_account,
+                    watermark_icon=watermark_icon,
+                    auto_post_video=auto_post_video)
+    bot.start()
+    _tw_bots[bot.bot_id] = bot
     _save_tw_bot_state()
     flash("✓ TW Like Bot başlatıldı.", "success")
     return _smart_redirect("tw_bot_page")
 
 
-@app.route("/tw-bot/stop", methods=["POST"])
+@app.route("/tw-bot/<bot_id>/stop", methods=["POST"])
 @login_required
-def stop_tw_bot():
-    global _tw_bot
-    if _tw_bot and _tw_bot.running:
-        _tw_bot.stop()
+def stop_tw_bot(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot and bot.running:
+        bot.stop()
         _save_tw_bot_state()
         flash("Bot durduruldu.", "warning")
     return _smart_redirect("tw_bot_page")
 
 
-@app.route("/tw-bot/check-now", methods=["POST"])
+@app.route("/tw-bot/<bot_id>/check-now", methods=["POST"])
 @login_required
-def tw_bot_check_now():
-    if _tw_bot and _tw_bot.running:
-        _tw_bot.check_now()
+def tw_bot_check_now(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot and bot.running:
+        bot.check_now()
         return jsonify({"ok": True})
     return jsonify({"ok": False, "msg": "Bot çalışmıyor"}), 400
 
 
-@app.route("/tw-bot/delete", methods=["POST"])
+@app.route("/tw-bot/<bot_id>/delete", methods=["POST"])
 @login_required
-def delete_tw_bot():
-    global _tw_bot
-    if _tw_bot:
-        _tw_bot.stop()
-        _tw_bot = None
-        if os.path.exists(TW_BOT_STATE_FILE):
-            os.remove(TW_BOT_STATE_FILE)
+def delete_tw_bot(bot_id):
+    bot = _tw_bots.pop(bot_id, None)
+    if bot:
+        bot.stop()
+        _save_tw_bot_state()
         flash("Bot silindi.", "success")
     return _smart_redirect("tw_bot_page")
 
 
-@app.route("/api/tw-bot/status")
+@app.route("/api/tw-bot/list")
 @login_required
-def api_tw_bot_status():
-    if _tw_bot is None:
+def api_tw_bot_list():
+    return jsonify([b.to_dict() for b in _tw_bots.values()])
+
+
+@app.route("/api/tw-bot/<bot_id>/status")
+@login_required
+def api_tw_bot_status(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
         return jsonify({"exists": False})
-    return jsonify({"exists": True, **_tw_bot.to_dict()})
+    return jsonify({"exists": True, **bot.to_dict()})
 
 
-@app.route("/api/tw-bot/log")
+@app.route("/api/tw-bot/<bot_id>/log")
 @login_required
-def api_tw_bot_log():
-    if _tw_bot is None:
+def api_tw_bot_log(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
         return jsonify([])
     n = request.args.get("n", 100, type=int)
-    return jsonify(_tw_bot.get_log(n))
+    return jsonify(bot.get_log(n))
+
+
+@app.route("/api/tw-bot/<bot_id>/queue")
+@login_required
+def api_tw_bot_queue(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify([])
+    items = []
+    for task in sorted(bot._queue):   # heap sıralı kopyası
+        items.append({
+            "run_at":    task.run_at,
+            "run_str":   datetime.fromtimestamp(task.run_at).strftime("%d.%m %H:%M"),
+            "page":      task.page.get("name", task.page.get("page_id", "?")),
+            "tweet_url": task.tweet_url,
+            "text":      task.text[:120] if task.text else "",
+            "photos":        len(task.photos),
+            "is_video_post": task.is_video_post,
+            "task_id":       task.task_id,
+        })
+    history = list(reversed(bot._posted_history[-10:]))  # en yeni önce
+    return jsonify({"queue": items, "history": history})
+
+
+@app.route("/api/tw-bot/<bot_id>/history-likes", methods=["GET"])
+@login_required
+def api_tw_bot_history_likes(bot_id):
+    """Son paylaşılanların FB like sayılarını döndürür."""
+    import re, requests as _req
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({}), 404
+
+    # Botun tüm sayfalarından page_id → token haritası
+    all_pages = bot.instant_pages + bot.queued_pages + bot.prime_pages
+    token_map = {p["page_id"]: p["access_token"] for p in all_pages if p.get("access_token")}
+
+    result = {}
+    for item in bot._posted_history:
+        post_url = item.get("post_url", "")
+        if not post_url:
+            continue
+
+        # URL'den page_id ve post raw_id çıkar
+        # Örnek: https://www.facebook.com/356043057851504/posts/123456
+        m = re.search(r'facebook\.com/(\d+)/(?:posts|videos)/(\d+)', post_url)
+        if not m:
+            continue
+        url_page_id = m.group(1)
+        raw_id      = m.group(2)
+
+        page_id = item.get("page_id", "") or url_page_id
+        token   = item.get("page_token", "") or token_map.get(page_id, "") or token_map.get(url_page_id, "")
+        if not token:
+            continue
+
+        object_id = f"{page_id}_{raw_id}"
+
+        try:
+            r = _req.get(
+                f"https://graph.facebook.com/v19.0/{object_id}",
+                params={"fields": "likes.summary(true)", "access_token": token},
+                timeout=8,
+            )
+            data = r.json()
+            count = data.get("likes", {}).get("summary", {}).get("total_count", 0)
+            result[post_url] = count
+        except Exception:
+            result[post_url] = None
+
+    return jsonify(result)
+
+
+@app.route("/api/tw-bot/<bot_id>/watermark", methods=["PATCH"])
+@login_required
+def api_tw_bot_set_watermark(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False, "msg": "Bot bulunamadı"}), 404
+    icon = (request.get_json(silent=True) or {}).get("icon", "").strip()
+    bot.watermark_icon = icon
+    _save_tw_bot_state()
+    return jsonify({"ok": True, "watermark_icon": icon})
+
+
+@app.route("/api/tw-bot/<bot_id>/rename", methods=["PATCH"])
+@login_required
+def api_tw_bot_rename(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False, "msg": "Bot bulunamadı"}), 404
+    name = (request.get_json(silent=True) or {}).get("name", "").strip()
+    if name:
+        bot.bot_name = name
+        _save_tw_bot_state()
+    return jsonify({"ok": True, "bot_name": bot.bot_name})
+
+
+@app.route("/api/tw-bot/<bot_id>/auto-video", methods=["PATCH"])
+@login_required
+def api_tw_bot_set_auto_video(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False, "msg": "Bot bulunamadı"}), 404
+    enabled = (request.get_json(silent=True) or {}).get("enabled", False)
+    bot.auto_post_video = bool(enabled)
+    _save_tw_bot_state()
+    return jsonify({"ok": True, "auto_post_video": bot.auto_post_video})
+
+
+@app.route("/api/tw-bot/<bot_id>/queue/<task_id>/run", methods=["POST"])
+@login_required
+def api_tw_bot_queue_run(bot_id, task_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False, "msg": "Bot bulunamadı"}), 404
+    ok = bot.run_queue_item(task_id)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/tw-bot/<bot_id>/queue/<task_id>", methods=["DELETE"])
+@login_required
+def api_tw_bot_queue_cancel(bot_id, task_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False, "msg": "Bot bulunamadı"}), 404
+    ok = bot.remove_queue_item(task_id)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/tw-bot/<bot_id>/queue/<task_id>/reschedule", methods=["POST"])
+@login_required
+def api_tw_bot_queue_reschedule(bot_id, task_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False, "msg": "Bot bulunamadı"}), 404
+    result = bot.reschedule_queue_item(task_id)
+    if result is None:
+        return jsonify({"ok": False, "msg": "Görev bulunamadı"}), 404
+    _save_tw_bot_state()
+    return jsonify({"ok": True, **result})
+
+
+@app.route("/api/tw-bot/<bot_id>/queue/swap", methods=["POST"])
+@login_required
+def api_tw_bot_queue_swap(bot_id):
+    """İki kuyruktaki görevin run_at (slot) zamanlarını değiştirir."""
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False, "msg": "Bot bulunamadı"}), 404
+    body = request.get_json(silent=True) or {}
+    id_a = body.get("task_id_a")
+    id_b = body.get("task_id_b")
+    if not id_a or not id_b:
+        return jsonify({"ok": False, "msg": "task_id_a ve task_id_b gerekli"}), 400
+    task_a = next((t for t in bot._queue if t.task_id == id_a), None)
+    task_b = next((t for t in bot._queue if t.task_id == id_b), None)
+    if task_a is None or task_b is None:
+        return jsonify({"ok": False, "msg": "Görev bulunamadı"}), 404
+    task_a.run_at, task_b.run_at = task_b.run_at, task_a.run_at
+    heapq.heapify(bot._queue)
+    _save_tw_bot_state()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tw-bot/<bot_id>/restart", methods=["POST"])
+@login_required
+def api_tw_bot_restart(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False}), 404
+    bot.restart()
+    _save_tw_bot_state()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tw-bot/<bot_id>/sleep", methods=["POST"])
+@login_required
+def api_tw_bot_sleep(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False}), 404
+    until_ts = request.json.get("until_ts") if request.is_json else None
+    if not until_ts:
+        return jsonify({"ok": False, "error": "until_ts gerekli"}), 400
+    bot.sleep_until(int(until_ts))
+    _save_tw_bot_state()
+    return jsonify({"ok": True})
+
+
+@app.route("/api/tw-bot/<bot_id>/set-account", methods=["POST"])
+@login_required
+def api_tw_bot_set_account(bot_id):
+    bot = _tw_bots.get(bot_id)
+    if bot is None:
+        return jsonify({"ok": False}), 404
+    account = int(request.json.get("account", 1)) if request.is_json else 1
+    bot.set_account(account)
+    _save_tw_bot_state()
+    return jsonify({"ok": True})
 
 
 @app.route("/tw-videos")
@@ -1012,17 +1250,70 @@ def tw_videos_page():
 @app.route("/api/tw-videos")
 @login_required
 def api_tw_videos():
-    if not _tw_bot:
-        return jsonify([])
-    return jsonify(_tw_bot._pending_videos)
+    result = []
+    for bot in _tw_bots.values():
+        result.extend(bot._pending_videos)
+    return jsonify(result)
 
 
 @app.route("/api/tw-videos/<video_id>/dismiss", methods=["POST"])
 @login_required
 def api_tw_video_dismiss(video_id):
-    if _tw_bot:
-        _tw_bot.dismiss_video(video_id)
+    for bot in _tw_bots.values():
+        bot.dismiss_video(video_id)
     return jsonify({"ok": True})
+
+
+def _fetch_tw_username(access_token: str, access_token_secret: str) -> str:
+    """Twitter API'den kullanıcı adı çeker (sadece cache boşken çağrılır)."""
+    try:
+        import tweepy
+        client = tweepy.Client(
+            consumer_key=config.TW_API_KEY,
+            consumer_secret=config.TW_API_SECRET,
+            access_token=access_token,
+            access_token_secret=access_token_secret,
+        )
+        me = client.get_me(user_auth=True)
+        return f"@{me.data.username}" if me and me.data else ""
+    except Exception:
+        return ""
+
+
+def _cache_tw_account_names():
+    """Uygulama başlarken arka planda bir kez çalışır.
+    İsimler zaten .env'de varsa API'ye dokunmaz."""
+    if not config.TW_API_KEY or not config.TW_API_SECRET:
+        return
+    changed = False
+    if not config.TW_ACCOUNT1_NAME and config.TW_ACCESS_TOKEN:
+        name = _fetch_tw_username(config.TW_ACCESS_TOKEN, config.TW_ACCESS_TOKEN_SECRET)
+        if name:
+            config.TW_ACCOUNT1_NAME = name
+            update_env("TW_ACCOUNT1_NAME", name)
+            changed = True
+    if not config.TW_ACCOUNT2_NAME and config.TW2_ACCESS_TOKEN:
+        name = _fetch_tw_username(config.TW2_ACCESS_TOKEN, config.TW2_ACCESS_TOKEN_SECRET)
+        if name:
+            config.TW_ACCOUNT2_NAME = name
+            update_env("TW_ACCOUNT2_NAME", name)
+            changed = True
+    if not config.TW_ACCOUNT3_NAME and config.TW3_ACCESS_TOKEN:
+        name = _fetch_tw_username(config.TW3_ACCESS_TOKEN, config.TW3_ACCESS_TOKEN_SECRET)
+        if name:
+            config.TW_ACCOUNT3_NAME = name
+            update_env("TW_ACCOUNT3_NAME", name)
+            changed = True
+    if changed:
+        print(f"[tw-cache] Hesap adları kaydedildi: "
+              f"{config.TW_ACCOUNT1_NAME} / {config.TW_ACCOUNT2_NAME} / {config.TW_ACCOUNT3_NAME}")
+
+
+@app.route("/api/icons")
+@login_required
+def api_icons():
+    from watermark import list_icons
+    return jsonify(list_icons())
 
 
 @app.route("/api/tw-credentials-check")
@@ -1034,7 +1325,17 @@ def api_tw_credentials_check():
         "TW_ACCESS_TOKEN":        config.TW_ACCESS_TOKEN,
         "TW_ACCESS_TOKEN_SECRET": config.TW_ACCESS_TOKEN_SECRET,
     }.items() if not v]
-    return jsonify({"ok": len(missing) == 0, "missing": missing})
+    account2_ready = bool(config.TW2_ACCESS_TOKEN and config.TW2_ACCESS_TOKEN_SECRET)
+    account3_ready = bool(config.TW3_ACCESS_TOKEN and config.TW3_ACCESS_TOKEN_SECRET)
+    return jsonify({
+        "ok":            len(missing) == 0,
+        "missing":       missing,
+        "account1_name": config.TW_ACCOUNT1_NAME,
+        "account2_ready": account2_ready,
+        "account2_name": config.TW_ACCOUNT2_NAME,
+        "account3_ready": account3_ready,
+        "account3_name": config.TW_ACCOUNT3_NAME,
+    })
 
 
 @app.route("/api/tw-activity-log")
@@ -1188,6 +1489,22 @@ def refresh_tokens():
     return _smart_redirect("settings")
 
 
+@app.route("/settings/tw2-tokens", methods=["POST"])
+@login_required
+def save_tw2_tokens():
+    at  = request.form.get("tw2_access_token", "").strip()
+    ats = request.form.get("tw2_access_token_secret", "").strip()
+    if not at or not ats:
+        flash("Her iki alan da doldurulmalıdır.", "danger")
+        return _smart_redirect("settings")
+    update_env("TW2_ACCESS_TOKEN", at)
+    update_env("TW2_ACCESS_TOKEN_SECRET", ats)
+    config.TW2_ACCESS_TOKEN        = at
+    config.TW2_ACCESS_TOKEN_SECRET = ats
+    flash("✓ Hesap 2 token'ları kaydedildi.", "success")
+    return _smart_redirect("settings")
+
+
 # ─── /newtema — Yeni tema önizleme (BahoAgent) ───────────────────────────────
 # Eski /, /videos, /repost-bots, /settings vb. route'lar olduğu gibi çalışmaya
 # devam eder. Yeni tema yayına alınınca template'leri ana yola taşıyacağız.
@@ -1196,19 +1513,12 @@ def _newtema_dashboard_stats() -> dict:
     repost_running = sum(1 for b in _repost_bots.values() if b.running)
     repost_total   = sum(int(getattr(b, "posts_reposted", 0)) for b in _repost_bots.values())
 
-    tw_running        = bool(_tw_bot and _tw_bot.running)
-    tw_target_pages   = 0
-    tw_likes          = 0
-    tw_videos_total   = 0
-    tw_videos_pending = 0
-    if _tw_bot is not None:
-        instant         = getattr(_tw_bot, "instant_pages", []) or []
-        queued          = getattr(_tw_bot, "queued_pages", []) or []
-        tw_target_pages = len(instant) + len(queued)
-        tw_likes        = int(getattr(_tw_bot, "tweets_posted", 0))
-        pending         = getattr(_tw_bot, "_pending_videos", []) or []
-        tw_videos_total = len(pending)
-        tw_videos_pending = tw_videos_total
+    tw_running        = any(b.running for b in _tw_bots.values())
+    tw_target_pages   = sum(len(b.instant_pages) + len(b.queued_pages) for b in _tw_bots.values())
+    tw_likes          = sum(b.tweets_posted for b in _tw_bots.values())
+    _all_pending      = [v for b in _tw_bots.values() for v in b._pending_videos]
+    tw_videos_total   = len(_all_pending)
+    tw_videos_pending = tw_videos_total
 
     return {
         "repost_running":    repost_running,
@@ -1248,6 +1558,7 @@ def newtema_settings():
         channel_id=config.YOUTUBE_CHANNEL_ID,
         fb_c_user=config.FB_COOKIE_C_USER,
         fb_xs=config.FB_COOKIE_XS,
+        tw2_ready=bool(config.TW2_ACCESS_TOKEN and config.TW2_ACCESS_TOKEN_SECRET),
     )
 
 
@@ -1267,22 +1578,212 @@ def newtema_repost_bots():
 @app.route("/newtema/tw-bot")
 @login_required
 def newtema_tw_bot_page():
+    bots = list(_tw_bots.values())
+    bots_json = [b.to_dict() for b in bots]
     return render_template(
         "newtema/tw_bot.html",
         pages=config.FB_PAGES,
-        bot=_tw_bot,
+        bots=bots,
+        bots_json=json.dumps(bots_json, ensure_ascii=False),
     )
 
 
 @app.route("/newtema/tw-videos")
 @login_required
 def newtema_tw_videos_page():
-    pending = _tw_bot._pending_videos if _tw_bot else []
+    pending = [v for b in _tw_bots.values() for v in b._pending_videos]
     return render_template(
         "newtema/tw_videos.html",
         pages=config.FB_PAGES,
         pending=pending,
     )
+
+
+# ─── İçerik Keşif (Discovery / Apify) ─────────────────────────────────────────
+
+@app.route("/newtema/kesfet")
+@login_required
+def newtema_kesfet():
+    status  = request.args.get("status", "pending")
+    sort_by = request.args.get("sort", "score")
+    items   = discovery.list_items(status=status, sort_by=sort_by, limit=300)
+    return render_template(
+        "newtema/kesfet.html",
+        items=items,
+        counts=discovery.counts(),
+        active_status=status,
+        active_sort=sort_by,
+    )
+
+
+@app.route("/api/discovery/list")
+@login_required
+def api_discovery_list():
+    status  = request.args.get("status", "pending")
+    sort_by = request.args.get("sort", "score")
+    return jsonify({
+        "items":  discovery.list_items(status=status, sort_by=sort_by, limit=300),
+        "counts": discovery.counts(),
+    })
+
+
+@app.route("/api/discovery/<content_id>/status", methods=["POST"])
+@login_required
+def api_discovery_set_status(content_id):
+    data    = request.get_json(silent=True) or {}
+    status  = (data.get("status") or request.form.get("status") or "").strip()
+    note    = (data.get("note")   or request.form.get("note")   or "").strip()
+    ok      = discovery.set_status(content_id, status, note=note)
+    return jsonify({"ok": ok})
+
+
+@app.route("/api/discovery/<content_id>", methods=["DELETE"])
+@login_required
+def api_discovery_delete(content_id):
+    return jsonify({"ok": discovery.delete_item(content_id)})
+
+
+# ─── Aday Bul (Candidates) ───────────────────────────────────────────────────
+
+@app.route("/newtema/kesfet/aday-bul")
+@login_required
+def newtema_aday_bul():
+    status        = request.args.get("status", "pending")
+    sort_by       = request.args.get("sort", "followers")
+    try:
+        min_followers = int(request.args.get("min_followers") or 0)
+    except Exception:
+        min_followers = 0
+    verified_only = request.args.get("verified") == "1"
+    has_bio       = request.args.get("with_bio") == "1"
+    category_q    = (request.args.get("cat") or "").strip()
+
+    return render_template(
+        "newtema/aday_bul.html",
+        items=discovery.list_candidates(
+            status=status, sort_by=sort_by,
+            min_followers=min_followers, verified_only=verified_only,
+            has_bio=has_bio, category_q=category_q, limit=300,
+        ),
+        counts=discovery.candidates_counts(),
+        active_status=status,
+        active_sort=sort_by,
+        filters={
+            "min_followers": min_followers,
+            "verified":      verified_only,
+            "with_bio":      has_bio,
+            "cat":           category_q,
+        },
+    )
+
+
+@app.route("/api/discovery/search-candidates", methods=["POST"])
+@login_required
+def api_search_candidates():
+    data      = request.get_json(silent=True) or {}
+    keywords  = data.get("keywords") or []
+    locations = data.get("locations") or []
+    max_items = int(data.get("max_items") or 50)
+    if not isinstance(keywords, list) or not keywords:
+        return jsonify({"ok": False, "error": "keywords boş"}), 400
+    return jsonify(discovery.trigger_candidate_search(keywords, locations, max_items))
+
+
+@app.route("/api/discovery/candidates/<cid>/status", methods=["POST"])
+@login_required
+def api_candidate_status(cid):
+    data = request.get_json(silent=True) or {}
+    status = (data.get("status") or "").strip()
+    return jsonify({"ok": discovery.set_candidate_status(cid, status)})
+
+
+@app.route("/api/discovery/candidates-webhook", methods=["POST"])
+def api_candidates_webhook():
+    """search-scraper webhook'u — aday sayfaları işler."""
+    expected = os.getenv("DISCOVERY_WEBHOOK_TOKEN", "")
+    given    = request.args.get("token", "") or request.headers.get("X-Webhook-Token", "")
+    if not expected or given != expected:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({"ok": False, "error": "invalid_json"}), 400
+
+    result = discovery.ingest_candidates(payload)
+    if not result.get("ok") and result.get("reason") == "dataset_polling_required":
+        dataset_id = result.get("dataset_id")
+        token      = os.getenv("APIFY_API_TOKEN", "")
+        if dataset_id and token:
+            items = discovery.fetch_apify_dataset(dataset_id, token)
+            if items:
+                result = discovery.ingest_candidates(items)
+                result["dataset_id"] = dataset_id
+
+    print(f"[discovery] candidates webhook result: {result}")
+    return jsonify(result)
+
+
+# ─── Alternatif Scraper (yashodhank/actor-facebook-scraper) ──────────────────
+
+@app.route("/newtema/kesfet/alternatif")
+@login_required
+def newtema_alt_scraper():
+    return render_template("newtema/alt_scraper.html")
+
+
+@app.route("/api/discovery/alt-scraper/run", methods=["POST"])
+@login_required
+def api_alt_scraper_run():
+    data = request.get_json(silent=True) or {}
+    urls = data.get("urls") or []
+    max_posts = int(data.get("max_posts") or 20)
+    if not urls:
+        return jsonify({"ok": False, "error": "urls boş"}), 400
+    return jsonify(discovery.trigger_alt_scraper(urls, max_posts))
+
+
+@app.route("/api/discovery/alt-scraper/status/<run_id>")
+@login_required
+def api_alt_scraper_status(run_id):
+    return jsonify(discovery.get_alt_run_status(run_id))
+
+
+@app.route("/api/discovery/webhook", methods=["POST"])
+def api_discovery_webhook():
+    """Apify → BahoAgent webhook endpoint.
+    Auth: ?token=... query param ile (env DISCOVERY_WEBHOOK_TOKEN).
+    Apify default webhook sadece run-meta gönderir; biz APIFY_API_TOKEN
+    ile dataset'i çekip işliyoruz.
+    """
+    expected = os.getenv("DISCOVERY_WEBHOOK_TOKEN", "")
+    given    = request.args.get("token", "") or request.headers.get("X-Webhook-Token", "")
+    if not expected or given != expected:
+        return jsonify({"ok": False, "error": "unauthorized"}), 401
+
+    payload = request.get_json(silent=True)
+    if payload is None:
+        return jsonify({"ok": False, "error": "invalid_json"}), 400
+
+    # 1) Direkt ingest dene
+    result = discovery.ingest_apify_payload(payload)
+
+    # 2) Eğer payload sadece run meta ise dataset'i polling ile çek
+    if not result.get("ok") and result.get("reason") == "dataset_polling_required":
+        dataset_id = result.get("dataset_id")
+        api_token  = os.getenv("APIFY_API_TOKEN", "")
+        if dataset_id and api_token:
+            items = discovery.fetch_apify_dataset(dataset_id, api_token)
+            if items:
+                result = discovery.ingest_apify_payload(items)
+                result["dataset_id"] = dataset_id
+            else:
+                result = {"ok": False, "reason": "dataset_empty",
+                          "dataset_id": dataset_id}
+        else:
+            result = {"ok": False, "reason": "missing_apify_token"}
+
+    print(f"[discovery] webhook result: {result}")
+    return jsonify(result)
 
 
 if __name__ == "__main__":

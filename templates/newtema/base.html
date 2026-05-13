@@ -454,6 +454,30 @@
     .modal-body{ padding: 20px; overflow-y: auto; }
     .modal-foot{ padding: 14px 20px; border-top: 1px solid var(--line); display:flex; gap: 8px; justify-content: flex-end; flex-wrap: wrap; }
 
+    /* ── Sub-nav (keşfet alt-sayfaları için) ── */
+    .subnav{
+      display:flex; gap: 4px; flex-wrap: wrap;
+      background: var(--surface); border: 1px solid var(--line);
+      border-radius: 14px; padding: 4px;
+      margin-bottom: 18px;
+    }
+    .subnav a{
+      flex: 1; min-width: 0;
+      text-align: center;
+      padding: 9px 14px; border-radius: 10px;
+      color: var(--ink-700); text-decoration: none;
+      font-size: 13.5px; font-weight: 600;
+      display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+      transition: all .15s ease; white-space: nowrap;
+    }
+    .subnav a:hover{ background: var(--mint-50); color: var(--ink-900); }
+    .subnav a.is-active{
+      background: var(--mint-150); color: var(--ink-900);
+    }
+    @media (max-width: 540px){
+      .subnav a{ font-size: 13px; padding: 9px 8px; }
+    }
+
     /* ── Visibility utilities ── */
     .mobile-only{ display: none; }
     .desktop-only{ display: block; }

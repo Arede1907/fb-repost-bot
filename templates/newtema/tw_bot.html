@@ -4,28 +4,109 @@
 
 {% block extra_head %}
 <style>
-  .stat-grid{
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0,1fr));
-    gap: 8px;
+  /* Multi-select (instant/queued sayfa seçimi) */
+  .ms-wrap{ position: relative; }
+  .ms-trigger{
+    width:100%; min-height: 44px;
+    background: var(--surface); color: var(--ink-900);
+    border: 1px solid var(--line-2); border-radius: 12px;
+    padding: 8px 40px 8px 12px;
+    display:flex; align-items:center; gap:6px;
+    flex-wrap: wrap; cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease;
+    font-family: inherit; font-size: 14px; text-align: left;
+    position: relative;
   }
-  @media (max-width: 860px){
-    .stat-grid{ grid-template-columns: repeat(2, minmax(0,1fr)); }
+  .ms-trigger:hover{ border-color: var(--mint-300); }
+  .ms-trigger.open{ border-color: var(--mint-400); box-shadow: 0 0 0 4px rgba(52,211,153,.18); }
+  .ms-trigger::after{
+    content: ""; position:absolute; right: 14px; top: 50%;
+    width: 8px; height: 8px;
+    border-right: 2px solid var(--ink-500); border-bottom: 2px solid var(--ink-500);
+    transform: translateY(-70%) rotate(45deg); transition: transform .15s ease;
   }
-  .stat-card{
+  .ms-trigger.open::after{ transform: translateY(-30%) rotate(-135deg); }
+  .ms-placeholder{ color: var(--ink-300); font-weight: 500; }
+  .ms-chip{
+    display:inline-flex; align-items:center; gap:4px;
+    background: var(--mint-100); color: var(--ink-900);
+    border: 1px solid var(--mint-200);
+    padding: 3px 8px; border-radius: 999px;
+    font-size: 12.5px; font-weight: 600;
+  }
+  .ms-chip .x{
+    width: 16px; height: 16px; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: rgba(15,61,39,.1); color: var(--ink-700);
+    cursor: pointer; font-size: 11px;
+  }
+  .ms-chip .x:hover{ background: var(--ink-700); color:#fff; }
+  .ms-panel{
+    position: fixed;
+    background: var(--surface); border: 1px solid var(--line-2);
+    border-radius: 14px; box-shadow: var(--shadow-lg);
+    z-index: 1090; max-height: 260px; overflow-y: auto;
+    display: none; padding: 6px;
+  }
+  .ms-panel.open{ display: block; }
+  .ms-option{
+    display:flex; align-items:center; gap:10px;
+    padding: 10px 12px; border-radius: 10px; cursor: pointer;
+    font-size: 14px; color: var(--ink-700); font-weight: 500;
+    user-select: none;
+  }
+  .ms-option:hover{ background: var(--mint-50); color: var(--ink-900); }
+  .ms-option.selected{ background: var(--mint-100); color: var(--ink-900); }
+  .ms-option input{ accent-color: var(--mint-500); width: 17px; height: 17px; margin: 0; pointer-events: none; }
+  .ms-actions{
+    display:flex; justify-content:space-between; align-items:center;
+    padding: 4px 8px 6px; border-bottom: 1px solid var(--line); margin-bottom: 4px;
+  }
+  .ms-actions button{
+    background:none; border:0; color: var(--mint-700);
+    font-weight: 600; font-size: 12px; cursor: pointer;
+    padding: 4px 6px; border-radius: 6px;
+  }
+  .ms-actions button:hover{ background: var(--mint-100); }
+
+  /* Bot list */
+  .bot-list{ display:flex; flex-direction: column; gap: 10px; padding: 14px; }
+  .bot-row{
+    display:flex; align-items:center; gap: 12px;
+    padding: 12px 14px;
     background: var(--surface); border: 1px solid var(--line);
-    border-radius: 12px; padding: 10px 8px; text-align: center;
+    border-radius: 14px; cursor: pointer;
+    transition: border-color .15s ease, box-shadow .15s ease, transform .08s ease;
   }
-  .stat-val{ font-size: 20px; font-weight: 800; line-height: 1; letter-spacing: -.02em; }
-  .stat-label{ font-size: 10.5px; font-weight: 600; color: var(--ink-500);
-               text-transform: uppercase; letter-spacing: .04em; margin-top: 4px; }
-  .info-row{
-    display:flex; justify-content: space-between; gap:10px;
+  .bot-row:hover{ border-color: var(--mint-300); box-shadow: 0 4px 14px -8px rgba(16,128,73,.18); }
+  .bot-row:active{ transform: translateY(1px); }
+  .bot-avatar{
+    width: 38px; height: 38px; border-radius: 12px;
+    background: var(--grad-soft); color: var(--mint-700);
+    display:flex; align-items:center; justify-content:center;
+    font-size: 16px; flex-shrink: 0;
+    border: 1px solid var(--mint-200);
+  }
+  .bot-main{ flex: 1; min-width: 0; }
+  .bot-name{ font-weight: 700; color: var(--ink-900); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-size: 14.5px; }
+  .bot-meta{ color: var(--ink-500); font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .bot-stats{ display:flex; align-items:center; gap: 10px; flex-shrink: 0; }
+  .bot-stat{ text-align:center; min-width: 44px; }
+  .bot-stat-val{ font-size: 16px; font-weight: 800; color: var(--ink-900); line-height: 1; }
+  .bot-stat-label{ font-size: 10.5px; color: var(--ink-500); margin-top: 3px; text-transform: uppercase; letter-spacing: .04em; }
+  .bot-chevron{ color: var(--ink-300); font-size: 18px; flex-shrink: 0; }
+
+  /* Detail overlay info rows */
+  .bot-detail-info{ background: var(--surface-2); border-radius: 14px; padding: 14px 16px; margin-bottom: 14px; }
+  .bot-detail-row{
+    display:flex; justify-content:space-between; gap: 10px;
     padding: 8px 0; border-bottom: 1px solid var(--line); font-size: 13.5px;
   }
-  .info-row:last-child{ border: 0; }
-  .info-row .k{ color: var(--ink-500); font-weight: 500; }
-  .info-row .v{ color: var(--ink-900); font-weight: 600; text-align: right; }
+  .bot-detail-row:last-child{ border: 0; }
+  .bot-detail-row .k{ color: var(--ink-500); font-weight: 500; }
+  .bot-detail-row .v{ color: var(--ink-900); font-weight: 600; text-align: right; }
+
+  /* Log table */
   .log-table{ width:100%; font-family:'SF Mono', monospace; font-size: 12.5px; }
   .log-table td{ padding: 4px 8px; border-bottom: 1px solid var(--line); vertical-align: middle; }
   .log-table tr:nth-child(odd) td{ background: rgba(220,252,231,.18); }
@@ -34,14 +115,18 @@
   .lvl-success{ color: #15803d; }
   .lvl-warn{ color: #a16207; }
   .lvl-error{ color: #b91c1c; }
+
   .pulse-dot{
     display:inline-block; width:8px; height:8px; border-radius:50%;
-    background:#22c55e; margin-right:6px;
+    background:#22c55e; margin-right:4px;
     animation: pulse 1.6s ease-in-out infinite;
   }
   @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
-  .log-wrap{ max-height: 560px; overflow-y: auto; border-top: 1px solid var(--line); }
-  @media (max-width: 860px){ .log-wrap{ max-height: 380px; } }
+
+  @media (max-width: 540px){
+    .bot-stat:nth-child(2){ display: none; }
+    .bot-name{ font-size: 14px; }
+  }
 </style>
 {% endblock %}
 
@@ -50,128 +135,101 @@
 <div class="page-header">
   <div>
     <h1 class="page-title"><i class="bi bi-heart-fill" style="color:#f43f5e"></i> TW API Bot</h1>
-    <div class="page-sub">Twitter API üzerinden videolu tweet'leri yakalar, Facebook sayfalarına aktarır.</div>
-  </div>
-  <div class="row-flex">
-    <span class="pill {% if bot and bot.running %}pill-success pill-dot{% elif bot %}pill-muted{% else %}pill-muted{% endif %}" id="status-pill">
-      {% if bot and bot.running %}Çalışıyor
-      {% elif bot %}Durdu
-      {% else %}Kurulmadı{% endif %}
-    </span>
+    <div class="page-sub">Twitter'da beğenilen tweet'leri Facebook sayfalarına aktarır.</div>
   </div>
 </div>
 
-<div class="grid" style="grid-template-columns: minmax(0,380px) 1fr; gap: 18px;">
-
-  <!-- Sol kolon: Durum + Kontrol -->
-  <div class="stack">
-
-    {% if bot %}
-    <div class="surface">
-      <div class="surface-head">
-        <i class="bi bi-graph-up-arrow" style="color:#22c55e"></i>
-        <span>Bot Durumu</span>
+<!-- Yeni Bot Başlat -->
+<div class="surface" style="margin-bottom:18px">
+  <div class="surface-head">
+    <i class="bi bi-plus-circle-fill" style="color:#22c55e"></i>
+    <span>Yeni Bot Başlat</span>
+  </div>
+  <div class="surface-body">
+    {% if not pages %}
+      <div class="alert alert-warning" style="margin:0">
+        <i class="bi bi-exclamation-triangle"></i>
+        <div>Önce <a href="/newtema/settings" style="color:#92400e;font-weight:700">Ayarlar</a>'dan Facebook sayfası ekle.</div>
       </div>
-      <div class="surface-body">
-        <div class="stat-grid" style="margin-bottom:14px">
-          <div class="stat-card">
-            <div class="stat-val" style="color:#15803d" id="stat-posted">{{ bot.tweets_posted }}</div>
-            <div class="stat-label">Paylaşılan</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val" style="color:#a16207" id="stat-pending">{{ bot.pending_tasks }}</div>
-            <div class="stat-label">Bekleyen</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val" style="color:#b91c1c" id="stat-errors">{{ bot.errors }}</div>
-            <div class="stat-label">Hata</div>
-          </div>
-          <div class="stat-card">
-            <div class="stat-val" style="color:#1d4ed8" id="stat-interval">{{ (bot.check_interval // 60) }}</div>
-            <div class="stat-label">Dk/Kontrol</div>
-          </div>
-        </div>
-
-        <div>
-          <div class="info-row">
-            <span class="k">Başladı</span>
-            <span class="v" id="info-started">{{ bot.started_at or "–" }}</span>
-          </div>
-          <div class="info-row">
-            <span class="k">Son Kontrol</span>
-            <span class="v" id="info-lastcheck">{{ bot.last_check or "–" }}</span>
-          </div>
-          <div class="info-row">
-            <span class="k">Sonraki</span>
-            <span class="v" id="info-nextcheck">{{ bot.next_check if bot.running else "–" }}</span>
-          </div>
-          <div class="info-row">
-            <span class="k">⚡ Anında</span>
-            <span class="v">{{ bot.instant_pages | map(attribute='name') | join(", ") or "–" }}</span>
-          </div>
-          <div class="info-row">
-            <span class="k">⏰ Kuyruk</span>
-            <span class="v">{{ bot.queued_pages | map(attribute='name') | join(", ") or "–" }}</span>
-          </div>
-        </div>
-
-        <div class="stack" style="gap:8px;margin-top:16px">
-          {% if bot.running %}
-            <button class="btn btn-soft btn-block" id="btn-check-now" onclick="checkNow()">
-              <i class="bi bi-arrow-clockwise"></i> Hemen Kontrol Et
-            </button>
-            <form method="post" action="/tw-bot/stop">
-              <button class="btn btn-warn btn-block"><i class="bi bi-stop-fill"></i> Durdur</button>
-            </form>
-          {% endif %}
-          <form method="post" action="/tw-bot/delete"
-                onsubmit="return confirm('Bot silinsin mi? Log geçmişi de temizlenir.')">
-            <button class="btn btn-ghost btn-block btn-sm"><i class="bi bi-trash"></i> Sil & Sıfırla</button>
-          </form>
-        </div>
-      </div>
-    </div>
-    {% endif %}
-
-    {% if not bot or not bot.running %}
-    <div class="surface">
-      <div class="surface-head">
-        <i class="bi bi-play-fill" style="color:#22c55e"></i>
-        <span>Bot Başlat</span>
-      </div>
-      <div class="surface-body">
-        <form method="post" action="/tw-bot/start">
-          {% if not pages %}
-            <div class="alert alert-warning" style="margin:0 0 12px">
-              <i class="bi bi-exclamation-triangle"></i>
-              <div>Kayıtlı FB sayfası yok. Önce Ayarlar'dan ekle.</div>
-            </div>
-          {% else %}
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label"><i class="bi bi-lightning-fill" style="color:#a16207"></i> Anında Paylaş</label>
-              <div class="stack" style="gap:6px">
-                {% for page in pages %}
-                <label class="check">
-                  <input type="checkbox" name="instant_page_ids" value="{{ page.page_id }}">
-                  <span>{{ page.name or page.page_id }}</span>
-                </label>
+    {% else %}
+      <form action="/tw-bot/start" method="post" id="tw-bot-form">
+        <div class="grid grid-cols-2" style="margin-bottom:14px;grid-template-columns:repeat(3,minmax(0,1fr))">
+          <div class="field">
+            <label class="field-label"><i class="bi bi-lightning-fill" style="color:#a16207"></i> Anında Paylaş</label>
+            <div class="ms-wrap" id="ms-instant">
+              <button type="button" class="ms-trigger" id="ms-instant-trigger" onclick="msToggle('instant')">
+                <span class="ms-placeholder" id="ms-instant-placeholder">— Sayfa seç —</span>
+                <span id="ms-instant-chips" style="display:contents"></span>
+              </button>
+              <div class="ms-panel" id="ms-instant-panel">
+                <div class="ms-actions">
+                  <button type="button" onclick="msSelectAll('instant',true)">Tümünü seç</button>
+                  <button type="button" onclick="msSelectAll('instant',false)">Temizle</button>
+                </div>
+                {% for p in pages %}
+                  <label class="ms-option" data-pid="{{ p.get('page_id','') }}" data-pname="{{ p.get('name', p.get('page_id','')) }}">
+                    <input type="checkbox" name="instant_page_ids" value="{{ p.get('page_id','') }}">
+                    <span>{{ p.get('name', p.get('page_id','')) }}</span>
+                  </label>
                 {% endfor %}
               </div>
             </div>
-            <div class="field" style="margin-bottom:14px">
-              <label class="field-label"><i class="bi bi-clock"></i> Kuyruğa Al — 5dk aralıklı</label>
-              <div class="stack" style="gap:6px">
-                {% for page in pages %}
-                <label class="check">
-                  <input type="checkbox" name="queued_page_ids" value="{{ page.page_id }}">
-                  <span>{{ page.name or page.page_id }}</span>
-                </label>
+            <div class="field-help">Yeni like bulununca hemen paylaşılır (5dk ara ile).</div>
+          </div>
+
+          <div class="field">
+            <label class="field-label"><i class="bi bi-clock"></i> Kuyruğa Al — 5dk aralıklı</label>
+            <div class="ms-wrap" id="ms-queued">
+              <button type="button" class="ms-trigger" id="ms-queued-trigger" onclick="msToggle('queued')">
+                <span class="ms-placeholder" id="ms-queued-placeholder">— Sayfa seç —</span>
+                <span id="ms-queued-chips" style="display:contents"></span>
+              </button>
+              <div class="ms-panel" id="ms-queued-panel">
+                <div class="ms-actions">
+                  <button type="button" onclick="msSelectAll('queued',true)">Tümünü seç</button>
+                  <button type="button" onclick="msSelectAll('queued',false)">Temizle</button>
+                </div>
+                {% for p in pages %}
+                  <label class="ms-option" data-pid="{{ p.get('page_id','') }}" data-pname="{{ p.get('name', p.get('page_id','')) }}">
+                    <input type="checkbox" name="queued_page_ids" value="{{ p.get('page_id','') }}">
+                    <span>{{ p.get('name', p.get('page_id','')) }}</span>
+                  </label>
                 {% endfor %}
               </div>
             </div>
-          {% endif %}
+            <div class="field-help">Sabit 5dk aralıklı. Quiet hours'ta durur.</div>
+          </div>
 
-          <div class="field" style="margin-bottom:14px">
+          <div class="field">
+            <label class="field-label"><i class="bi bi-graph-up-arrow" style="color:#15803d"></i> Prime Saatler — 7/24</label>
+            <div class="ms-wrap" id="ms-prime">
+              <button type="button" class="ms-trigger" id="ms-prime-trigger" onclick="msToggle('prime')">
+                <span class="ms-placeholder" id="ms-prime-placeholder">— Sayfa seç —</span>
+                <span id="ms-prime-chips" style="display:contents"></span>
+              </button>
+              <div class="ms-panel" id="ms-prime-panel">
+                <div class="ms-actions">
+                  <button type="button" onclick="msSelectAll('prime',true)">Tümünü seç</button>
+                  <button type="button" onclick="msSelectAll('prime',false)">Temizle</button>
+                </div>
+                {% for p in pages %}
+                  <label class="ms-option" data-pid="{{ p.get('page_id','') }}" data-pname="{{ p.get('name', p.get('page_id','')) }}">
+                    <input type="checkbox" name="prime_page_ids" value="{{ p.get('page_id','') }}">
+                    <span>{{ p.get('name', p.get('page_id','')) }}</span>
+                  </label>
+                {% endfor %}
+              </div>
+            </div>
+            <div class="field-help">Gece ~100dk, prime 20:00-22:00 ~17dk. Quiet hours YOK.</div>
+          </div>
+        </div>
+
+        <div class="grid grid-cols-2" style="margin-bottom:18px">
+          <div class="field">
+            <label class="field-label">Bot Adı <span class="text-muted" style="font-weight:400">(opsiyonel)</span></label>
+            <input type="text" class="input" name="bot_name" placeholder="Spor Bot 1">
+          </div>
+          <div class="field">
             <label class="field-label">Kontrol Sıklığı</label>
             <select name="check_interval" class="select">
               <option value="1">1 dakika</option>
@@ -182,179 +240,935 @@
               <option value="30">30 dakika</option>
             </select>
           </div>
-          <button type="submit" class="btn btn-primary btn-block" {% if not pages %}disabled{% endif %}>
-            <i class="bi bi-play-fill"></i> Başlat
-          </button>
-        </form>
+        </div>
 
-        <hr style="border:0;border-top:1px solid var(--line);margin:16px 0">
-        <div class="text-muted small" style="margin-bottom:6px">Twitter API Durumu:</div>
-        <div id="api-status-check" class="text-muted small">Kontrol ediliyor...</div>
-      </div>
-    </div>
+        <div style="display:flex;gap:12px;align-items:flex-end;margin-bottom:18px;flex-wrap:wrap" id="wm-video-row">
+          <div class="field" style="flex:1;min-width:180px;margin-bottom:0">
+            <label class="field-label"><i class="bi bi-image"></i> Watermark İkonu</label>
+            <select name="watermark_icon" class="select" id="watermark-icon-select">
+              <option value="">— İkon yok —</option>
+            </select>
+          </div>
+          <label class="check" style="flex:1;min-width:180px;min-height:44px;border:1px solid var(--line-2);border-radius:12px;padding:11px 14px;margin:0;box-sizing:border-box">
+            <input type="checkbox" name="auto_post_video" value="on" id="auto-post-video-check">
+            <span style="display:flex;align-items:center;gap:6px">
+              <i class="bi bi-film" style="color:var(--mint-600)"></i>
+              <span style="font-weight:600">Videoları otomatik post et</span>
+            </span>
+          </label>
+        </div>
+
+        <div class="row-flex" style="gap:16px;align-items:center;flex-wrap:wrap;margin-top:4px">
+          <div>
+            <div style="font-size:13px;font-weight:600;color:var(--ink-700);margin-bottom:8px">
+              <i class="bi bi-person-circle"></i> Kaynak Twitter Hesabı
+            </div>
+            <div class="row-flex" style="gap:10px;flex-wrap:wrap">
+              <label class="check" style="min-height:44px">
+                <input type="radio" name="tw_account" value="1" checked>
+                <span><i class="bi bi-1-circle-fill" style="color:#1d9bf0"></i>
+                  <span id="tw1-name">Hesap 1</span>
+                </span>
+              </label>
+              <label class="check" style="min-height:44px" id="tw2-radio-label">
+                <input type="radio" name="tw_account" value="2" id="tw2-radio">
+                <span><i class="bi bi-2-circle-fill" style="color:#1d9bf0"></i>
+                  <span id="tw2-name">Hesap 2</span>
+                  <span class="text-muted" style="font-weight:400;font-size:12px" id="tw2-status-badge"></span>
+                </span>
+              </label>
+              <label class="check" style="min-height:44px" id="tw3-radio-label">
+                <input type="radio" name="tw_account" value="3" id="tw3-radio">
+                <span><i class="bi bi-3-circle-fill" style="color:#1d9bf0"></i>
+                  <span id="tw3-name">Hesap 3</span>
+                  <span class="text-muted" style="font-weight:400;font-size:12px" id="tw3-status-badge"></span>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div style="margin-left:auto;display:flex;align-items:center;gap:12px">
+            <div id="api-status-check" class="text-muted small">API kontrol ediliyor...</div>
+            <button type="submit" class="btn btn-primary"><i class="bi bi-play-fill"></i> Botu Başlat</button>
+          </div>
+        </div>
+      </form>
     {% endif %}
-
   </div>
-
-  <!-- Sağ kolon: Log -->
-  <div class="surface">
-    <div class="surface-head">
-      <i class="bi bi-terminal"></i>
-      <span>Aktivite Logu</span>
-      {% if bot and bot.running %}
-        <span class="text-muted small" style="margin-left:6px"><span class="pulse-dot"></span>canlı</span>
-      {% endif %}
-      <div style="margin-left:auto" class="row-flex" style="gap:6px">
-        <button class="btn btn-ghost btn-sm btn-icon" onclick="clearDisplay()" title="Temizle"><i class="bi bi-eraser"></i></button>
-        <button class="btn btn-ghost btn-sm btn-icon" onclick="openFullLog()" title="Tam log"><i class="bi bi-arrows-fullscreen"></i></button>
-      </div>
-    </div>
-    <div class="log-wrap">
-      <table class="log-table">
-        <tbody id="log-body">
-          {% if bot %}
-            {% for entry in bot.get_log(100) %}
-            <tr>
-              <td class="text-muted" style="width:60px;white-space:nowrap">{{ entry.time }}</td>
-              <td class="lvl-{{ entry.level }}" style="width:24px">
-                {% if entry.level == 'success' %}✓
-                {% elif entry.level == 'error' %}✗
-                {% elif entry.level == 'warn' %}⚠
-                {% else %}·{% endif %}
-              </td>
-              <td>{{ entry.text }}</td>
-            </tr>
-            {% endfor %}
-          {% else %}
-            <tr><td colspan="3" class="text-muted" style="text-align:center;padding:30px">
-              Bot başlatıldıktan sonra loglar burada görünür.
-            </td></tr>
-          {% endif %}
-        </tbody>
-      </table>
-    </div>
-  </div>
-
 </div>
 
-<!-- Tam log modal -->
-<div class="modal-mask" id="fullLogModal">
-  <div class="modal-card" style="max-width:1000px">
+<!-- Bot Listesi -->
+<div class="surface">
+  <div class="surface-head">
+    <i class="bi bi-heart-fill" style="color:#f43f5e"></i>
+    <span>Aktif Botlar</span>
+    <span class="pill pill-muted" style="margin-left:8px" id="bot-count-pill">{{ bots|length }}</span>
+    <div class="row-flex" style="margin-left:auto;gap:6px">
+      <button class="btn btn-ghost btn-sm" onclick="refreshBots()" title="Sayaçları yenile"><i class="bi bi-arrow-clockwise"></i> Yenile</button>
+      <button class="btn btn-soft btn-sm" onclick="showActivityLog()"><i class="bi bi-file-earmark-text"></i> Aktivite Log</button>
+    </div>
+  </div>
+
+  {% if bots %}
+  <div class="bot-list" id="bot-list">
+    {% for bot in bots %}
+    {% set d = bot.to_dict() %}
+    <div class="bot-row" id="bot-row-{{ bot.bot_id }}" onclick="openBot('{{ bot.bot_id }}')">
+      <div class="bot-avatar"><i class="bi bi-heart-fill" style="color:#f43f5e"></i></div>
+      <div class="bot-main">
+        <div class="bot-name">
+          {% if bot.bot_name %}{{ bot.bot_name }}{% else %}Bot {{ loop.index }}{% endif %}
+        </div>
+        <div class="bot-meta">
+          <span style="color:#1d9bf0;font-weight:600">H{{ bot.tw_account }}</span>
+          {% if bot.instant_pages %} · ⚡ {{ bot.instant_pages | map(attribute='name') | join(", ") }}{% endif %}
+          {% if bot.queued_pages %} · ⏰ {{ bot.queued_pages | map(attribute='name') | join(", ") }}{% endif %}
+          {% if bot.prime_pages %} · 📈 {{ bot.prime_pages | map(attribute='name') | join(", ") }}{% endif %}
+        </div>
+      </div>
+      <div class="bot-stats">
+        <div class="bot-stat">
+          <div class="bot-stat-val" id="tw-posted-{{ bot.bot_id }}" style="color:#15803d">{{ bot.tweets_posted }}</div>
+          <div class="bot-stat-label">Paylaşım</div>
+        </div>
+        <div class="bot-stat">
+          <div class="bot-stat-val" id="tw-pending-{{ bot.bot_id }}" style="color:#a16207">{{ bot.pending_tasks }}</div>
+          <div class="bot-stat-label">Kuyruk</div>
+        </div>
+        <span id="status-pill-{{ bot.bot_id }}">
+          {% if bot.running %}
+            <span class="pill pill-success pill-dot">Aktif</span>
+          {% elif bot.finished %}
+            <span class="pill pill-muted">Bitti</span>
+          {% else %}
+            <span class="pill pill-muted">Durdu</span>
+          {% endif %}
+        </span>
+      </div>
+      <i class="bi bi-chevron-right bot-chevron"></i>
+    </div>
+    {% endfor %}
+  </div>
+  {% else %}
+  <div class="empty" id="bot-list-empty">
+    <div class="empty-icon"><i class="bi bi-heart"></i></div>
+    <div>Henüz bot yok. Yukarıdan yeni bir bot başlat.</div>
+  </div>
+  {% endif %}
+</div>
+
+<!-- Detail Overlay -->
+<div class="modal-mask" id="detailModal">
+  <div class="modal-card">
     <div class="modal-head">
-      <i class="bi bi-file-text"></i><span>TW API Bot — Tam Log</span>
-      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('fullLogModal')"><i class="bi bi-x-lg"></i></button>
+      <i class="bi bi-heart-fill" style="color:#f43f5e"></i>
+      <span id="detail-title" style="cursor:pointer" title="İsmi değiştir" onclick="startRenameBot()">Bot</span>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:4px;color:var(--ink-300)" title="İsmi değiştir" onclick="startRenameBot()"><i class="bi bi-pencil" style="font-size:12px"></i></button>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('detailModal')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div class="bot-detail-info" id="detail-info"></div>
+      <div class="row-flex" id="detail-actions" style="gap:8px;margin-bottom:10px;flex-wrap:wrap"></div>
+      <div id="log-container"
+           style="font-family:'SF Mono',monospace;font-size:13px;background:var(--surface-2);border-radius:12px;padding:6px;max-height:340px;overflow-y:auto;border:1px solid var(--line)">
+        <div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Queue Modal -->
+<div class="modal-mask" id="queueModal" style="z-index:1100">
+  <div class="modal-card" style="max-width:680px">
+    <div class="modal-head">
+      <i class="bi bi-list-ol"></i>
+      <span>Görevler</span>
+      <span id="queue-modal-count" class="pill pill-muted" style="margin-left:8px"></span>
+      <button class="btn btn-ghost btn-sm" style="margin-left:auto;margin-right:6px" onclick="showQueue()"><i class="bi bi-arrow-clockwise"></i></button>
+      <button class="btn btn-ghost btn-sm btn-icon" onclick="closeModal('queueModal')"><i class="bi bi-x-lg"></i></button>
     </div>
     <div class="modal-body" style="padding:0">
-      <pre id="full-log-content"
-           style="margin:0;padding:14px;font-family:'SF Mono',monospace;font-size:12.5px;
-                  white-space:pre-wrap;background:var(--surface-2);color:var(--ink-700);
-                  max-height:65vh;overflow-y:auto">Yükleniyor...</pre>
-    </div>
-    <div class="modal-foot">
-      <span class="text-muted small" id="full-log-info" style="margin-right:auto"></span>
-      <button class="btn btn-soft btn-sm" onclick="closeModal('fullLogModal')">Kapat</button>
+      <div id="queue-modal-body" style="max-height:65vh;overflow-y:auto">
+        <div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>
+      </div>
     </div>
   </div>
 </div>
 
-<style>
-  @media (max-width: 860px){
-    .page .grid[style*="grid-template-columns"]{ grid-template-columns: 1fr !important; }
-  }
-</style>
+<!-- Watermark Confirm Modal -->
+<div class="modal-mask" id="wmConfirmModal" style="z-index:1200">
+  <div class="modal-card" style="max-width:420px">
+    <div class="modal-head">
+      <i class="bi bi-image" style="color:var(--mint-600)"></i>
+      <span>Watermark Değiştir</span>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('wmConfirmModal')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <div style="background:var(--surface-2);border-radius:14px;padding:16px;margin-bottom:16px">
+        <div style="display:flex;align-items:center;gap:10px;font-size:13.5px">
+          <span style="flex:1;text-align:center">
+            <div style="font-size:11px;color:var(--ink-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Mevcut</div>
+            <span id="wm-confirm-from" style="font-weight:700;color:var(--ink-700)"></span>
+          </span>
+          <i class="bi bi-arrow-right" style="color:var(--mint-500);font-size:18px;flex-shrink:0"></i>
+          <span style="flex:1;text-align:center">
+            <div style="font-size:11px;color:var(--ink-400);margin-bottom:4px;text-transform:uppercase;letter-spacing:.05em">Yeni</div>
+            <span id="wm-confirm-to" style="font-weight:700;color:var(--ink-900)"></span>
+          </span>
+        </div>
+      </div>
+      <p style="font-size:13px;color:var(--ink-500);margin:0 0 4px">
+        Bu değişiklik kuyruktaki bekleyen tüm görevlere ve bundan sonraki tüm paylaşımlara anında uygulanır.
+      </p>
+    </div>
+    <div class="modal-foot" style="gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('wmConfirmModal')">İptal</button>
+      <button class="btn btn-primary btn-sm" id="wm-confirm-ok"><i class="bi bi-check-lg"></i> Evet, Değiştir</button>
+    </div>
+  </div>
+</div>
+
+<!-- Sleep Picker Modal -->
+<div class="modal-mask" id="sleepModal" style="z-index:1200">
+  <div class="modal-card" style="max-width:360px">
+    <div class="modal-head">
+      <i class="bi bi-moon" style="color:#a16207"></i>
+      <span>Botu Uyut</span>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('sleepModal')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body">
+      <p style="font-size:13px;color:var(--ink-500);margin:0 0 12px">Bu saate kadar tweet kontrolü yapılmaz, kuyruk korunur.</p>
+      <input type="datetime-local" id="sleep-until-input" class="input" style="font-size:14px">
+    </div>
+    <div class="modal-foot" style="gap:8px">
+      <button class="btn btn-ghost btn-sm" onclick="closeModal('sleepModal')">İptal</button>
+      <button class="btn btn-primary btn-sm" onclick="confirmSleep()"><i class="bi bi-moon"></i> Uyut</button>
+    </div>
+  </div>
+</div>
+
+<!-- Activity Log Modal -->
+<div class="modal-mask" id="activityLogModal">
+  <div class="modal-card" style="max-width:1000px">
+    <div class="modal-head">
+      <i class="bi bi-file-earmark-text"></i>
+      <span>TW API Bot — Aktivite Logu</span>
+      <span class="text-muted small" id="activity-log-count" style="margin-left:8px"></span>
+      <button class="btn btn-ghost btn-sm btn-icon" style="margin-left:auto" onclick="closeModal('activityLogModal')"><i class="bi bi-x-lg"></i></button>
+    </div>
+    <div class="modal-body" id="activity-log-container"
+         style="font-family:'SF Mono',monospace;font-size:12.5px;max-height:65vh;overflow-y:auto;background:var(--surface-2);padding:8px">
+      <div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>
+    </div>
+    <div class="modal-foot">
+      <button class="btn btn-soft btn-sm" onclick="closeModal('activityLogModal')">Kapat</button>
+    </div>
+  </div>
+</div>
 
 {% endblock %}
 
 {% block scripts %}
 <script>
-(async function() {
-  const el = document.getElementById('api-status-check');
-  if (!el) return;
-  try {
-    const r = await fetch('/api/tw-credentials-check');
-    const d = await r.json();
-    if (d.ok) el.innerHTML = '<span style="color:#15803d"><i class="bi bi-check-circle"></i> Credentials .env\'de mevcut</span>';
-    else el.innerHTML = `<span style="color:#a16207"><i class="bi bi-exclamation-triangle"></i> ${d.missing.join(", ")} eksik</span>`;
-  } catch { el.textContent = '–'; }
-})();
+// ── Multiselect ────────────────────────────────────────────────────────────────
+const _msState = { instant: new Set(), queued: new Set(), prime: new Set() };
 
-let _lastLogCount = 0;
-
-async function pollLog() {
-  try {
-    const r = await fetch('/api/tw-bot/log?n=100');
-    const entries = await r.json();
-    if (!Array.isArray(entries) || entries.length === _lastLogCount) return;
-    _lastLogCount = entries.length;
-    const tbody = document.getElementById('log-body');
-    if (!tbody) return;
-    tbody.innerHTML = entries.map(e => {
-      const icon = e.level === 'success' ? '✓' : e.level === 'error' ? '✗' : e.level === 'warn' ? '⚠' : '·';
-      return `<tr>
-        <td class="text-muted" style="width:60px;white-space:nowrap">${e.time}</td>
-        <td class="lvl-${e.level}" style="width:24px">${icon}</td>
-        <td>${escHtml(e.text)}</td>
-      </tr>`;
-    }).join('');
-  } catch {}
-}
-
-async function pollStatus() {
-  try {
-    const r = await fetch('/api/tw-bot/status');
-    const d = await r.json();
-    if (!d.exists) return;
-    const pill = document.getElementById('status-pill');
-    if (pill) {
-      if (d.running) { pill.textContent = 'Çalışıyor'; pill.className = 'pill pill-success pill-dot'; }
-      else if (d.finished) { pill.textContent = 'Durdu'; pill.className = 'pill pill-muted'; }
-    }
-    const set = (id, v) => { const el = document.getElementById(id); if (el) el.textContent = (v == null || v === '') ? '–' : v; };
-    set('stat-posted', d.tweets_posted);
-    set('stat-pending', d.pending_tasks);
-    set('stat-errors', d.errors);
-    set('info-lastcheck', d.last_check);
-    set('info-nextcheck', d.running ? d.next_check : '–');
-  } catch {}
-}
-
-function escHtml(s) {
-  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
-}
-
-async function checkNow() {
-  const btn = document.getElementById('btn-check-now');
-  if (btn) { btn.disabled = true; btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Kontrol ediliyor...'; }
-  try { await fetch('/tw-bot/check-now', { method: 'POST' }); }
-  finally {
-    setTimeout(() => { if (btn) { btn.disabled = false; btn.innerHTML = '<i class="bi bi-arrow-clockwise"></i> Hemen Kontrol Et'; } }, 3000);
+function msToggle(key) {
+  const panel   = document.getElementById(`ms-${key}-panel`);
+  const trigger = document.getElementById(`ms-${key}-trigger`);
+  const open    = panel.classList.toggle('open');
+  trigger.classList.toggle('open', open);
+  if (open) {
+    const rect = trigger.getBoundingClientRect();
+    panel.style.top   = (rect.bottom + 4) + 'px';
+    panel.style.left  = rect.left + 'px';
+    panel.style.width = rect.width + 'px';
   }
 }
 
-function clearDisplay() {
-  const tbody = document.getElementById('log-body');
-  if (tbody) tbody.innerHTML = '<tr><td colspan="3" class="text-muted" style="text-align:center;padding:20px">Görüntü temizlendi.</td></tr>';
-  _lastLogCount = 0;
+document.addEventListener('click', e => {
+  ['instant', 'queued', 'prime'].forEach(key => {
+    const trigger = document.getElementById(`ms-${key}-trigger`);
+    const panel   = document.getElementById(`ms-${key}-panel`);
+    if (trigger && !trigger.contains(e.target) && panel && !panel.contains(e.target)) {
+      trigger.classList.remove('open');
+      panel.classList.remove('open');
+    }
+  });
+});
+
+function msSelectAll(key, val) {
+  document.querySelectorAll(`#ms-${key}-panel .ms-option input`).forEach(cb => {
+    cb.checked = val;
+    const opt = cb.closest('.ms-option');
+    const pid = opt.dataset.pid, pname = opt.dataset.pname;
+    if (val) { _msState[key].add(pid); } else { _msState[key].delete(pid); }
+    opt.classList.toggle('selected', val);
+  });
+  msRenderChips(key);
 }
 
-async function openFullLog() {
-  openModal('fullLogModal');
-  const el = document.getElementById('full-log-content');
-  const info = document.getElementById('full-log-info');
-  el.textContent = 'Yükleniyor...';
+function msRenderChips(key) {
+  const chips  = document.getElementById(`ms-${key}-chips`);
+  const ph     = document.getElementById(`ms-${key}-placeholder`);
+  const names  = [];
+  document.querySelectorAll(`#ms-${key}-panel .ms-option input:checked`).forEach(cb => {
+    names.push(cb.closest('.ms-option').dataset.pname);
+  });
+  if (names.length === 0) {
+    chips.innerHTML = '';
+    ph.style.display = '';
+  } else {
+    ph.style.display = 'none';
+    chips.innerHTML = names.map(n =>
+      `<span class="ms-chip">${escHtml(n)}</span>`
+    ).join('');
+  }
+}
+
+document.querySelectorAll('.ms-option').forEach(opt => {
+  opt.addEventListener('click', e => {
+    const cb = opt.querySelector('input');
+    cb.checked = !cb.checked;
+    opt.classList.toggle('selected', cb.checked);
+    const key = opt.closest('.ms-panel').id.includes('instant') ? 'instant' : 'queued';
+    msRenderChips(key);
+    e.preventDefault();
+  });
+});
+
+// ── Bot overlay ────────────────────────────────────────────────────────────────
+let _currentBotId = null;
+let _pollTimer    = null;
+let _acct2Ready   = false;
+let _acct3Ready   = false;
+
+// Initial data from server
+const _botsData = {{ bots_json | safe }};
+const _botsMap  = {};
+_botsData.forEach(b => _botsMap[b.bot_id] = b);
+
+function openBot(bid) {
+  _currentBotId = bid;
+  const d = _botsMap[bid];
+  if (!d) return;
+  document.getElementById('detail-title').textContent =
+    d.bot_name ? d.bot_name : 'Bot ' + bid.slice(0,6);
+  renderDetail(d);
+  _populateWmSelect(bid, d.watermark_icon || '');
+  loadLog(bid);
+  openModal('detailModal');
+  clearInterval(_pollTimer);
+  _pollTimer = setInterval(() => refreshDetail(bid), 5000);
+}
+
+function renderDetail(d) {
+  const instant = (d.instant_pages || []).join(', ') || '–';
+  const queued  = (d.queued_pages  || []).join(', ') || '–';
+  document.getElementById('detail-info').innerHTML = `
+    <div class="bot-detail-row" style="align-items:center">
+      <span class="k">Twitter Hesabı</span>
+      <span class="v" style="display:flex;align-items:center;gap:6px">
+        <select id="acct-select-${d.bot_id}" class="select" style="min-height:32px;padding:4px 8px;font-size:13px;max-width:160px" onchange="changeAccount('${d.bot_id}', this.value)">
+          <option value="1" ${d.tw_account===1?'selected':''}>@${(document.getElementById('tw1-name')?.textContent||'Hesap 1').replace('@','')}</option>
+          <option value="2" ${d.tw_account===2?'selected':''} ${!_acct2Ready?'disabled':''}>@${(document.getElementById('tw2-name')?.textContent||'Hesap 2').replace('@','')}</option>
+          <option value="3" ${d.tw_account===3?'selected':''} ${!_acct3Ready?'disabled':''}>@${(document.getElementById('tw3-name')?.textContent||'Hesap 3').replace('@','')}</option>
+        </select>
+      </span>
+    </div>
+    ${d.sleep_until_str ? `<div class="bot-detail-row"><span class="k" style="color:#a16207">💤 Uyuyor</span><span class="v" style="color:#a16207;font-weight:600">${d.sleep_until_str}'e kadar</span></div>` : ''}
+    <div class="bot-detail-row" style="align-items:center">
+      <span class="k">Watermark</span>
+      <span class="v" style="display:flex;align-items:center;gap:6px">
+        <select id="wm-select-${d.bot_id}" class="select" style="min-height:32px;padding:4px 8px;font-size:13px;max-width:180px" onchange="_updateApplyBtn('${d.bot_id}')">
+          <option value="">— İkon yok —</option>
+        </select>
+        <button id="wm-apply-${d.bot_id}" class="btn btn-soft btn-sm" style="min-height:32px;display:none" onclick="applyWatermark('${d.bot_id}')">Uygula</button>
+      </span>
+    </div>
+    <div class="bot-detail-row" style="align-items:center">
+      <span class="k">Video Modu</span>
+      <span class="v" style="display:flex;align-items:center;gap:8px">
+        <label class="check" style="min-height:32px;margin:0">
+          <input type="checkbox" id="apv-check-${d.bot_id}" ${d.auto_post_video ? 'checked' : ''}
+                 onchange="toggleAutoVideo('${d.bot_id}', this.checked)">
+          <span style="font-size:13px">Videoları otomatik post et</span>
+        </label>
+      </span>
+    </div>
+    <div class="bot-detail-row"><span class="k">Başladı</span><span class="v">${d.started_at || '–'}</span></div>
+    <div class="bot-detail-row"><span class="k">Son Kontrol</span><span class="v">${d.last_check || '–'}</span></div>
+    <div class="bot-detail-row"><span class="k">Sonraki</span><span class="v">${d.running ? (d.next_check || '–') : '–'}</span></div>
+    <div class="bot-detail-row"><span class="k">⚡ Anında</span><span class="v">${escHtml(instant)}</span></div>
+    <div class="bot-detail-row"><span class="k">⏰ Kuyruk</span><span class="v">${escHtml(queued)}</span></div>
+    <div class="bot-detail-row"><span class="k">📈 Prime</span><span class="v">${escHtml((d.prime_pages||[]).join(', ')||'–')}</span></div>
+    <div class="bot-detail-row"><span class="k">Paylaşılan</span><span class="v" style="color:#15803d">${d.tweets_posted}</span></div>
+    <div class="bot-detail-row"><span class="k">Bekleyen görev</span><span class="v" style="color:#a16207">${d.pending_tasks}</span></div>
+    <div class="bot-detail-row"><span class="k">Hata</span><span class="v" style="color:#b91c1c">${d.errors}</span></div>
+    <div class="bot-detail-row"><span class="k">Kontrol sıklığı</span><span class="v">${Math.round(d.check_interval/60)} dk</span></div>
+  `;
+  const acts = document.getElementById('detail-actions');
+  let html = '';
+  if (d.running) {
+    html += `<button class="btn btn-soft btn-sm" onclick="checkNow('${d.bot_id}')"><i class="bi bi-arrow-clockwise"></i> Hemen Kontrol</button>`;
+    if (d.sleep_until && d.sleep_until > Math.floor(Date.now()/1000)) {
+      html += `<button class="btn btn-warn btn-sm" onclick="cancelSleep('${d.bot_id}')"><i class="bi bi-alarm"></i> Uykuyu İptal</button>`;
+    } else {
+      html += `<button class="btn btn-soft btn-sm" onclick="openSleepPicker('${d.bot_id}')" title="Belirtilen saate kadar uyut"><i class="bi bi-moon"></i> Uyut</button>`;
+    }
+    html += `<form method="post" action="/tw-bot/${d.bot_id}/stop" style="display:inline">
+               <button class="btn btn-warn btn-sm"><i class="bi bi-stop-fill"></i> Durdur</button></form>`;
+  } else if (!d.finished) {
+    html += `<button class="btn btn-primary btn-sm" onclick="restartBot('${d.bot_id}')"><i class="bi bi-play-fill"></i> Yeniden Başlat</button>`;
+  }
+  html += `<button class="btn btn-ghost btn-sm" onclick="showQueue()">
+             <i class="bi bi-list-ol"></i> Kuyruk
+             <span id="queue-count-badge" class="pill pill-muted" style="margin-left:2px;font-size:11px">${d.pending_tasks||0}</span>
+           </button>`;
+  html += `<form method="post" action="/tw-bot/${d.bot_id}/delete" style="display:inline"
+             onsubmit="return confirm('Bot silinsin mi? Log geçmişi de temizlenir.')">
+             <button class="btn btn-ghost btn-sm"><i class="bi bi-trash"></i> Sil</button></form>`;
+  html += `<button class="btn btn-ghost btn-sm" style="margin-left:auto" onclick="refreshLog()"><i class="bi bi-arrow-clockwise"></i> Yenile</button>`;
+  acts.innerHTML = html;
+}
+
+async function refreshDetail(bid) {
+  try {
+    const r = await fetch(`/api/tw-bot/${bid}/status`);
+    const d = await r.json();
+    if (!d.exists) return;
+    _botsMap[bid] = d;
+    renderDetail(d);
+    _populateWmSelect(bid, d.watermark_icon || '');
+    // Row counters
+    const posted  = document.getElementById(`tw-posted-${bid}`);
+    const pending = document.getElementById(`tw-pending-${bid}`);
+    const pill    = document.getElementById(`status-pill-${bid}`);
+    if (posted)  posted.textContent  = d.tweets_posted;
+    if (pending) pending.textContent = d.pending_tasks;
+    if (pill) {
+      if (d.running)       pill.innerHTML = '<span class="pill pill-success pill-dot">Aktif</span>';
+      else if (d.finished) pill.innerHTML = '<span class="pill pill-muted">Bitti</span>';
+      else                 pill.innerHTML = '<span class="pill pill-muted">Durdu</span>';
+    }
+  } catch {}
+}
+
+async function refreshLog() {
+  if (!_currentBotId) return;
+  loadLog(_currentBotId);
+  // Kuyruk sayısını da güncelle
+  try {
+    const r = await fetch(`/api/tw-bot/${_currentBotId}/queue`);
+    const data = await r.json();
+    const badge = document.getElementById('queue-count-badge');
+    if (badge) badge.textContent = (data.queue || []).length;
+  } catch {}
+}
+
+// ── Queue drag & drop ────────────────────────────────────────────────────────
+let _dqDragId = null;
+function _dqStart(e, taskId) {
+  _dqDragId = taskId;
+  e.dataTransfer.effectAllowed = 'move';
+  e.currentTarget.style.opacity = '.45';
+}
+function _dqOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  e.currentTarget.style.background = 'rgba(52,211,153,.12)';
+}
+function _dqDrop(e, targetId) {
+  e.preventDefault();
+  e.currentTarget.style.background = '';
+  document.querySelectorAll('#queue-modal-body tr[data-task-id]').forEach(r => r.style.opacity = '');
+  if (!_dqDragId || _dqDragId === targetId || !_currentBotId) { _dqDragId = null; return; }
+  const dragId = _dqDragId;
+  _dqDragId = null;
+
+  // Optimistic: DOM'da iki satırın saat hücrelerini anında takas et
+  const rowA = document.querySelector(`#queue-modal-body tr[data-task-id="${dragId}"]`);
+  const rowB = document.querySelector(`#queue-modal-body tr[data-task-id="${targetId}"]`);
+  if (rowA && rowB) {
+    const timeA = rowA.cells[0].innerHTML;
+    rowA.cells[0].innerHTML = rowB.cells[0].innerHTML;
+    rowB.cells[0].innerHTML = timeA;
+  }
+
+  // API'yi arka planda çağır
+  fetch(`/api/tw-bot/${_currentBotId}/queue/swap`, {
+    method: 'POST',
+    headers: {'Content-Type':'application/json'},
+    body: JSON.stringify({task_id_a: dragId, task_id_b: targetId}),
+  }).catch(() => {});
+}
+
+async function showQueue() {
+  if (!_currentBotId) return;
+  openModal('queueModal');
+  const body  = document.getElementById('queue-modal-body');
+  const count = document.getElementById('queue-modal-count');
+  if (!body) { console.error('queue-modal-body bulunamadı'); return; }
+  body.innerHTML = '<div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>';
+  try {
+    const r    = await fetch(`/api/tw-bot/${_currentBotId}/queue`);
+    if (!r.ok) {
+      if (r.status === 302 || r.redirected) { location.href = '/login'; return; }
+      throw new Error('HTTP ' + r.status);
+    }
+    const data = await r.json();
+    const items   = data.queue   || [];
+    const history = data.history || [];
+    if (count) count.style.display = 'none';  // header'daki pill gizle, içeride göstereceğiz
+    const badge = document.getElementById('queue-count-badge');
+    if (badge) badge.textContent = items.length;
+
+    const queueHtml = items.length
+      ? `<div style="padding:10px 14px 8px;display:flex;align-items:center;gap:8px">
+           <span style="display:inline-flex;align-items:center;gap:6px;background:#1d4ed8;color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:999px;letter-spacing:.03em">
+             <i class="bi bi-clock-history"></i> Planlı Görevler
+           </span>
+           <span style="background:var(--surface-2);border:1px solid var(--line-2);color:var(--ink-600);font-size:12px;font-weight:700;padding:4px 10px;border-radius:999px">${items.length} bekleyen</span>
+         </div>
+         <table style="width:100%;font-size:13px;border-collapse:collapse">
+          <thead><tr style="background:var(--surface-2);font-size:11px;text-transform:uppercase;letter-spacing:.04em;color:var(--ink-500)">
+            <th style="padding:8px 14px;text-align:left;font-weight:600">Saat</th>
+            <th style="padding:8px 14px;text-align:left;font-weight:600">Sayfa</th>
+            <th style="padding:8px 14px;text-align:left;font-weight:600">İçerik</th>
+            <th style="padding:8px 14px;text-align:center;font-weight:600">Medya</th>
+            <th style="padding:8px 10px;text-align:center;font-weight:600"></th>
+          </tr></thead>
+          <tbody>` +
+          items.map((it, i) => `
+            <tr draggable="true" data-task-id="${escHtml(it.task_id)}"
+                style="border-top:1px solid var(--line);${i%2===1?'background:rgba(220,252,231,.1)':''}cursor:grab"
+                ondragstart="_dqStart(event,'${escHtml(it.task_id)}')"
+                ondragover="_dqOver(event)"
+                ondrop="_dqDrop(event,'${escHtml(it.task_id)}')">
+              <td style="padding:8px 6px 8px 14px;white-space:nowrap;font-family:'SF Mono',monospace;color:var(--ink-700)">
+                <span style="color:var(--ink-300);margin-right:4px;font-size:12px">⠿</span>${escHtml(it.run_str)}
+              </td>
+              <td style="padding:8px 14px;font-weight:600;color:var(--ink-900)">${escHtml(it.page)}</td>
+              <td style="padding:8px 14px;max-width:240px">
+                <a href="${escHtml(it.tweet_url)}" target="_blank" style="color:#1d9bf0;font-size:12px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.tweet_url.replace('https://x.com/','@').replace(/\/status\/\d+/,''))}</a>
+                ${it.text ? `<div style="font-size:11.5px;color:var(--ink-500);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.text)}</div>` : ''}
+              </td>
+              <td style="padding:8px 14px;text-align:center;color:var(--ink-500)">${it.is_video_post ? '🎥' : (it.photos ? '🖼 '+it.photos : '—')}</td>
+              <td style="padding:4px 8px;text-align:center;white-space:nowrap">
+                <button onclick="runQueueItem('${escHtml(it.task_id)}')"
+                        style="background:none;border:none;color:var(--ink-300);cursor:pointer;font-size:15px;line-height:1;padding:3px 6px;border-radius:6px;transition:color .12s,background .12s"
+                        onmouseover="this.style.color='#15803d';this.style.background='rgba(21,128,61,.08)'"
+                        onmouseout="this.style.color='var(--ink-300)';this.style.background='none'"
+                        title="Hemen yayınla">✓</button>
+                <button onclick="rescheduleQueueItem('${escHtml(it.task_id)}')"
+                        style="background:none;border:none;color:var(--ink-300);cursor:pointer;font-size:14px;line-height:1;padding:3px 6px;border-radius:6px;transition:color .12s,background .12s"
+                        onmouseover="this.style.color='#b45309';this.style.background='rgba(180,83,9,.08)'"
+                        onmouseout="this.style.color='var(--ink-300)';this.style.background='none'"
+                        title="En yakın slota taşı">↺</button>
+                <button onclick="cancelQueueItem('${escHtml(it.task_id)}')"
+                        style="background:none;border:none;color:var(--ink-300);cursor:pointer;font-size:15px;line-height:1;padding:3px 6px;border-radius:6px;transition:color .12s,background .12s"
+                        onmouseover="this.style.color='#b91c1c';this.style.background='rgba(185,28,28,.08)'"
+                        onmouseout="this.style.color='var(--ink-300)';this.style.background='none'"
+                        title="İptal et">✕</button>
+              </td>
+            </tr>`).join('') +
+          `</tbody></table>`
+      : `<div class="text-muted text-center" style="padding:24px 24px 8px">Kuyruk boş.</div>`;
+
+    const historyHtml = history.length
+      ? `<div style="padding:10px 14px 8px;border-top:2px solid var(--line);margin-top:4px">
+           <span style="display:inline-flex;align-items:center;gap:6px;background:#15803d;color:#fff;font-size:12px;font-weight:700;padding:5px 14px;border-radius:999px;letter-spacing:.03em">
+             <i class="bi bi-check2-circle"></i> Son Paylaşılanlar
+           </span>
+         </div>
+         <table style="width:100%;font-size:12.5px;border-collapse:collapse;opacity:.85">
+           <tbody id="history-tbody-${_currentBotId}">` +
+           history.map((it, i) => `
+             <tr style="border-top:1px solid var(--line);${i%2===1?'background:rgba(220,252,231,.07)':''}" data-post-url="${escHtml(it.post_url||'')}">
+               <td style="padding:6px 14px;white-space:nowrap;font-family:'SF Mono',monospace;color:var(--ink-500)">${escHtml(it.posted_at)}</td>
+               <td style="padding:6px 14px;font-weight:600;color:var(--ink-700)">${escHtml(it.page)}</td>
+               <td style="padding:6px 14px;max-width:240px">
+                 <a href="${escHtml(it.tweet_url)}" target="_blank" style="color:#1d9bf0;font-size:11.5px;display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.tweet_url.replace('https://x.com/','@').replace(/\/status\/\d+/,''))}</a>
+                 ${it.text ? `<div style="font-size:11px;color:var(--ink-400);margin-top:1px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${escHtml(it.text)}</div>` : ''}
+               </td>
+               <td style="padding:6px 14px;text-align:center;color:var(--ink-400)">${it.photos ? '🖼 '+it.photos : '—'}</td>
+               <td class="like-cell" style="padding:6px 10px;text-align:center;color:var(--ink-400);font-size:12px">
+                 <span class="like-val">…</span>
+               </td>
+               <td style="padding:6px 10px;text-align:center">
+                 ${it.post_url ? `<a href="${escHtml(it.post_url)}" target="_blank"
+                   style="display:inline-flex;align-items:center;gap:3px;color:#1877f2;font-size:11.5px;font-weight:600;text-decoration:none;padding:3px 8px;border-radius:6px;border:1px solid #1877f2"
+                   title="FB postuna git"><i class="bi bi-facebook"></i></a>` : ''}
+               </td>
+             </tr>`).join('') +
+           `</tbody></table>`
+      : '';
+
+    body.innerHTML = queueHtml + historyHtml;
+
+    // Like sayılarını async yükle
+    if (history.length) _loadHistoryLikes(_currentBotId);
+  } catch(e) { console.error('showQueue hata:', e); body.innerHTML = '<div class="text-muted text-center" style="padding:24px">Yüklenemedi.</div>'; }
+}
+
+async function _loadHistoryLikes(botId) {
+  try {
+    const r = await fetch(`/api/tw-bot/${botId}/history-likes`);
+    if (!r.ok) return;
+    const likes = await r.json();
+    const tbody = document.getElementById(`history-tbody-${botId}`);
+    if (!tbody) return;
+    tbody.querySelectorAll('tr[data-post-url]').forEach(row => {
+      const url = row.getAttribute('data-post-url');
+      const cell = row.querySelector('.like-val');
+      if (!cell) return;
+      if (!url || !(url in likes)) { cell.textContent = '—'; return; }
+      const n = likes[url];
+      cell.innerHTML = n === null ? '—' :
+        `<span style="display:inline-flex;align-items:center;gap:3px;color:#e05;font-weight:600">
+           <i class="bi bi-heart-fill" style="font-size:10px"></i>${n}
+         </span>`;
+    });
+  } catch {}
+}
+
+let _iconList = [];
+(async function() {
+  try {
+    const r = await fetch('/api/icons');
+    _iconList = await r.json();
+  } catch {}
+})();
+
+function _populateWmSelect(botId, currentIcon) {
+  const sel = document.getElementById(`wm-select-${botId}`);
+  if (!sel) return;
+  sel.innerHTML = '<option value="">— İkon yok —</option>';
+  _iconList.forEach(name => {
+    const opt = document.createElement('option');
+    opt.value = name; opt.textContent = name;
+    if (name === currentIcon) opt.selected = true;
+    sel.appendChild(opt);
+  });
+  sel.value = currentIcon || '';
+  sel.dataset.current = currentIcon || '';
+  _updateApplyBtn(botId);
+}
+
+function _updateApplyBtn(botId) {
+  const sel = document.getElementById(`wm-select-${botId}`);
+  const btn = document.getElementById(`wm-apply-${botId}`);
+  if (!sel || !btn) return;
+  btn.style.display = sel.value === sel.dataset.current ? 'none' : '';
+}
+
+function applyWatermark(botId) {
+  const sel  = document.getElementById(`wm-select-${botId}`);
+  if (!sel) return;
+  const newIcon = sel.value;
+  const oldIcon = sel.dataset.current || '';
+
+  // Confirm modal doldur
+  document.getElementById('wm-confirm-from').textContent = oldIcon || '— İkon yok —';
+  document.getElementById('wm-confirm-to').textContent   = newIcon || '— İkon yok —';
+
+  const okBtn = document.getElementById('wm-confirm-ok');
+  okBtn.onclick = async () => {
+    closeModal('wmConfirmModal');
+    try {
+      const r = await fetch(`/api/tw-bot/${botId}/watermark`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({icon: newIcon}),
+      });
+      const d = await r.json();
+      if (d.ok) {
+        if (_botsMap[botId]) _botsMap[botId].watermark_icon = newIcon;
+        sel.dataset.current = newIcon;
+        _updateApplyBtn(botId);
+      }
+    } catch {}
+  };
+  openModal('wmConfirmModal');
+}
+
+async function startRenameBot() {
+  if (!_currentBotId) return;
+  const titleEl = document.getElementById('detail-title');
+  const current = titleEl.textContent.trim();
+  const inp = document.createElement('input');
+  inp.type = 'text';
+  inp.value = current;
+  inp.className = 'input';
+  inp.style.cssText = 'font-size:15px;font-weight:700;padding:4px 8px;height:32px;width:180px';
+  titleEl.replaceWith(inp);
+  inp.focus();
+  inp.select();
+  const finish = async () => {
+    const newName = inp.value.trim() || current;
+    const span = document.createElement('span');
+    span.id = 'detail-title';
+    span.style.cursor = 'pointer';
+    span.title = 'İsmi değiştir';
+    span.onclick = startRenameBot;
+    span.textContent = newName;
+    inp.replaceWith(span);
+    if (newName === current) return;
+    try {
+      await fetch(`/api/tw-bot/${_currentBotId}/rename`, {
+        method: 'PATCH',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name: newName}),
+      });
+      if (_botsMap[_currentBotId]) _botsMap[_currentBotId].bot_name = newName;
+      // Bot listesindeki ismi de güncelle
+      const nameEl = document.getElementById(`tw-name-${_currentBotId}`);
+      if (nameEl) nameEl.textContent = newName;
+    } catch {}
+  };
+  inp.addEventListener('blur', finish);
+  inp.addEventListener('keydown', e => { if (e.key === 'Enter') inp.blur(); if (e.key === 'Escape') { inp.value = current; inp.blur(); } });
+}
+
+async function toggleAutoVideo(botId, enabled) {
+  try {
+    const r = await fetch(`/api/tw-bot/${botId}/auto-video`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({enabled}),
+    });
+    const d = await r.json();
+    if (d.ok && _botsMap[botId]) _botsMap[botId].auto_post_video = d.auto_post_video;
+  } catch {}
+}
+
+async function runQueueItem(taskId) {
+  if (!_currentBotId) return;
+  try {
+    const r = await fetch(`/api/tw-bot/${_currentBotId}/queue/${taskId}/run`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) await showQueue();
+  } catch {}
+}
+
+async function restartBot(bid) {
+  try {
+    const r = await fetch(`/api/tw-bot/${bid}/restart`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) { await refreshDetail(bid); loadLog(bid); }
+  } catch {}
+}
+
+function openSleepPicker(bid) {
+  // Varsayılan: yarın sabah 08:00
+  const def = new Date(); def.setDate(def.getDate()+1); def.setHours(8,0,0,0);
+  const pad = n => String(n).padStart(2,'0');
+  document.getElementById('sleep-until-input').value =
+    `${def.getFullYear()}-${pad(def.getMonth()+1)}-${pad(def.getDate())}T${pad(def.getHours())}:${pad(def.getMinutes())}`;
+  openModal('sleepModal');
+}
+
+async function confirmSleep() {
+  if (!_currentBotId) return;
+  const val = document.getElementById('sleep-until-input').value;
+  if (!val) return;
+  const ts = Math.floor(new Date(val).getTime() / 1000);
+  try {
+    const r = await fetch(`/api/tw-bot/${_currentBotId}/sleep`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({until_ts: ts})
+    });
+    const d = await r.json();
+    if (d.ok) { closeModal('sleepModal'); await refreshDetail(_currentBotId); }
+  } catch {}
+}
+
+async function cancelSleep(bid) {
+  try {
+    const r = await fetch(`/api/tw-bot/${bid}/sleep`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({until_ts: 0})
+    });
+    const d = await r.json();
+    if (d.ok) await refreshDetail(bid);
+  } catch {}
+}
+
+async function changeAccount(bid, account) {
+  try {
+    await fetch(`/api/tw-bot/${bid}/set-account`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({account: parseInt(account)})
+    });
+  } catch {}
+}
+
+async function cancelQueueItem(taskId) {
+  if (!_currentBotId) return;
+  try {
+    const r = await fetch(`/api/tw-bot/${_currentBotId}/queue/${taskId}`, { method: 'DELETE' });
+    const d = await r.json();
+    if (d.ok) await showQueue();  // tabloyu yenile
+  } catch {}
+}
+
+async function rescheduleQueueItem(taskId) {
+  if (!_currentBotId) return;
+  try {
+    const r = await fetch(`/api/tw-bot/${_currentBotId}/queue/${taskId}/reschedule`, { method: 'POST' });
+    const d = await r.json();
+    if (d.ok) await showQueue();
+  } catch {}
+}
+
+async function loadLog(bid) {
+  const el = document.getElementById('log-container');
+  try {
+    const r = await fetch(`/api/tw-bot/${bid}/log?n=100`);
+    const entries = await r.json();
+    if (!Array.isArray(entries) || !entries.length) {
+      el.innerHTML = '<div class="text-muted text-center" style="padding:24px">Log boş.</div>';
+      return;
+    }
+    el.innerHTML = `<table class="log-table"><tbody>` +
+      entries.map(e => {
+        const icon = e.level==='success' ? '✓' : e.level==='error' ? '✗' : e.level==='warn' ? '⚠' : '·';
+        return `<tr>
+          <td class="text-muted" style="width:60px;white-space:nowrap">${e.time}</td>
+          <td class="lvl-${e.level}" style="width:24px">${icon}</td>
+          <td>${escHtml(e.text)}</td>
+        </tr>`;
+      }).join('') +
+      `</tbody></table>`;
+    el.scrollTop = 0;
+  } catch { el.innerHTML = '<div class="text-muted text-center" style="padding:24px">Yüklenemedi.</div>'; }
+}
+
+async function checkNow(bid) {
+  try { await fetch(`/tw-bot/${bid}/check-now`, { method: 'POST' }); }
+  catch {}
+  setTimeout(() => refreshLog(), 3000);
+}
+
+function closeModalAndStop() {
+  clearInterval(_pollTimer);
+  _currentBotId = null;
+}
+
+// Override base openModal/closeModal to also clear polling
+const _origCloseModal = window.closeModal;
+window.closeModal = function(id) {
+  if (id === 'detailModal') closeModalAndStop();
+  if (_origCloseModal) _origCloseModal(id);
+  else {
+    const el = document.getElementById(id);
+    if (el) el.classList.remove('open');
+  }
+};
+
+// ── Refresh all bot rows ───────────────────────────────────────────────────────
+async function refreshBots() {
+  try {
+    const r = await fetch('/api/tw-bot/list');
+    const bots = await r.json();
+    const pill = document.getElementById('bot-count-pill');
+    if (pill) pill.textContent = bots.length;
+    bots.forEach(d => {
+      _botsMap[d.bot_id] = d;
+      const posted  = document.getElementById(`tw-posted-${d.bot_id}`);
+      const pending = document.getElementById(`tw-pending-${d.bot_id}`);
+      const row_pill = document.getElementById(`status-pill-${d.bot_id}`);
+      if (posted)  posted.textContent  = d.tweets_posted;
+      if (pending) pending.textContent = d.pending_tasks;
+      if (row_pill) {
+        if (d.running)       row_pill.innerHTML = '<span class="pill pill-success pill-dot">Aktif</span>';
+        else if (d.finished) row_pill.innerHTML = '<span class="pill pill-muted">Bitti</span>';
+        else                 row_pill.innerHTML = '<span class="pill pill-muted">Durdu</span>';
+      }
+    });
+  } catch {}
+}
+
+// ── Activity Log ───────────────────────────────────────────────────────────────
+async function showActivityLog() {
+  openModal('activityLogModal');
+  const el   = document.getElementById('activity-log-container');
+  const info = document.getElementById('activity-log-count');
+  el.innerHTML = '<div class="text-muted text-center" style="padding:30px">Yükleniyor...</div>';
   try {
     const r = await fetch('/api/tw-activity-log?n=1000');
     const d = await r.json();
-    el.textContent = d.lines.join('\n') || '(log boş)';
-    if (info) info.textContent = `Toplam ${d.total} satır, son 1000 gösteriliyor`;
+    if (info) info.textContent = `${d.total} satır, son 1000 gösteriliyor`;
+    el.innerHTML = d.lines.length
+      ? d.lines.map(l => `<div style="padding:2px 4px;border-bottom:1px solid var(--line)">${escHtml(l)}</div>`).join('')
+      : '<div class="text-muted text-center" style="padding:24px">Log boş.</div>';
     el.scrollTop = el.scrollHeight;
   } catch { el.textContent = 'Log yüklenemedi.'; }
 }
 
-{% if bot and bot.running %}
-setInterval(pollLog, 5000);
-setInterval(pollStatus, 8000);
-pollLog();
-{% endif %}
+// ── İkon listesini yükle ──────────────────────────────────────────────────────
+(async function() {
+  const sel = document.getElementById('watermark-icon-select');
+  if (!sel) return;
+  try {
+    const r     = await fetch('/api/icons');
+    const icons = await r.json();
+    icons.forEach(name => {
+      const opt = document.createElement('option');
+      opt.value       = name;
+      opt.textContent = name;
+      sel.appendChild(opt);
+    });
+  } catch {}
+})();
+
+// ── API credentials check ──────────────────────────────────────────────────────
+(async function() {
+  const el     = document.getElementById('api-status-check');
+  const badge2 = document.getElementById('tw2-status-badge');
+  const radio2 = document.getElementById('tw2-radio');
+  if (!el) return;
+  try {
+    const r = await fetch('/api/tw-credentials-check');
+    const d = await r.json();
+    if (d.ok) el.innerHTML = '<span style="color:#15803d"><i class="bi bi-check-circle"></i> API credentials hazır</span>';
+    else el.innerHTML = `<span style="color:#a16207"><i class="bi bi-exclamation-triangle"></i> ${d.missing.join(', ')} eksik</span>`;
+
+    const tw1Name = document.getElementById('tw1-name');
+    const tw2Name = document.getElementById('tw2-name');
+    const tw3Name = document.getElementById('tw3-name');
+    if (tw1Name && d.account1_name) tw1Name.textContent = d.account1_name;
+    if (tw2Name && d.account2_name) tw2Name.textContent = d.account2_name;
+    if (tw3Name && d.account3_name) tw3Name.textContent = d.account3_name;
+
+    const badge3 = document.getElementById('tw3-status-badge');
+    const radio3 = document.getElementById('tw3-radio');
+    _acct2Ready = !!d.account2_ready;
+    _acct3Ready = !!d.account3_ready;
+    if (badge2) {
+      if (d.account2_ready) {
+        badge2.innerHTML = d.account2_name ? '' : '<span style="color:#15803d">(tanımlı ✓)</span>';
+      } else {
+        badge2.innerHTML = '<span style="color:#b91c1c">(tanımsız — Ayarlar\'dan ekle)</span>';
+        if (radio2) radio2.disabled = true;
+      }
+    }
+    if (badge3) {
+      if (d.account3_ready) {
+        badge3.innerHTML = d.account3_name ? '' : '<span style="color:#15803d">(tanımlı ✓)</span>';
+      } else {
+        badge3.innerHTML = '<span style="color:#b91c1c">(tanımsız — Ayarlar\'dan ekle)</span>';
+        if (radio3) radio3.disabled = true;
+      }
+    }
+  } catch { el.textContent = '–'; }
+})();
+
+function escHtml(s) {
+  return String(s == null ? '' : s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// Auto-refresh every 30s when there are running bots
+const _hasRunning = {{ 'true' if bots|selectattr('running')|list else 'false' }};
+if (_hasRunning) setInterval(refreshBots, 30000);
 </script>
 {% endblock %}

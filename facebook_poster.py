@@ -192,8 +192,15 @@ def _upload_single_photo(page_id: str, token: str, photo: str,
         return False, {"error": str(e)}
 
 
+def _post_url(page_id: str, raw_id: str) -> str:
+    """Graph API'den dönen post id'sini FB linke çevirir."""
+    num = raw_id.split("_", 1)[1] if "_" in raw_id else raw_id
+    return f"https://www.facebook.com/{page_id}/posts/{num}"
+
+
 def upload_photo_to_page(page: dict, photo_urls: list[str],
-                         caption: str = "", user_token: str = "") -> bool | str:
+                         caption: str = "", user_token: str = "",
+                         _return_post_url: bool = False) -> bool | str | tuple:
     """
     FB sayfasına foto post'u yükler.
     photo_urls listesi URL veya local file path içerebilir (karışık olabilir).
@@ -213,10 +220,15 @@ def upload_photo_to_page(page: dict, photo_urls: list[str],
         ok, data = _upload_single_photo(page_id, token, photo_urls[0],
                                         caption=caption, published=True)
         if ok:
-            logger.info(f"[{page_id}] Foto yüklendi: {data.get('post_id') or data.get('id')}")
+            raw_id = data.get("post_id") or data.get("id", "")
+            logger.info(f"[{page_id}] Foto yüklendi: {raw_id}")
+            if _return_post_url:
+                return True, _post_url(page_id, raw_id) if raw_id else ""
             return True
         err = data.get("error", data)
         logger.error(f"[{page_id}] Foto yükleme hatası: {err}")
+        if _return_post_url:
+            return str(err), ""
         return str(err)
 
     # Çoklu foto — önce unpublished yükle, sonra feed'e attach et
@@ -248,9 +260,13 @@ def upload_photo_to_page(page: dict, photo_urls: list[str],
         data = resp.json()
         if resp.status_code == 200 and "id" in data:
             logger.info(f"[{page_id}] Çoklu foto post'u yayınlandı: {data['id']}")
+            if _return_post_url:
+                return True, _post_url(page_id, data["id"])
             return True
         err = data.get("error", data)
         logger.error(f"[{page_id}] Feed post hatası: {err}")
+        if _return_post_url:
+            return str(err), ""
         return str(err)
     except requests.RequestException as e:
         return str(e)

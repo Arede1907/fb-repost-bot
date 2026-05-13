@@ -20,6 +20,7 @@ from onapp import (
     _load_repost_bots_state,
     _load_tw_bot_state,
     _periodic_save_loop,
+    _cache_tw_account_names,
 )
 
 
@@ -43,6 +44,7 @@ def _init_once():
     _load_repost_bots_state()
     _load_tw_bot_state()
     threading.Thread(target=_periodic_save_loop, daemon=True).start()
+    threading.Thread(target=_cache_tw_account_names, daemon=True).start()
 
 
 _init_once()
